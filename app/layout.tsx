@@ -10,16 +10,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-br">
       <body>
-        {/* BRAND BAR fixa e centralizada */}
+        {/* BRAND BAR: apenas o logo central, grande */}
         <header className="brand-bar">
           <div className="brand-bar__inner">
             <img src="/logo.png" alt="NovuSys" className="brand-bar__logo" />
-            <div className="brand-bar__text">
-            </div>
           </div>
         </header>
 
-        {/* Conteúdo das páginas */}
         <div className="page-wrap">{children}</div>
       </body>
     </html>
