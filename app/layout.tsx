@@ -15,8 +15,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="brand-bar__inner">
             <img src="/logo.png" alt="NovuSys" className="brand-bar__logo" />
             <div className="brand-bar__text">
-              <span className="brand-bar__name">NovuSys</span>
-              <span className="brand-bar__tagline">Transformamos códigos em resultados</span>
             </div>
           </div>
         </header>
