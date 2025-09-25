@@ -136,6 +136,7 @@ export default function Page() {
     }
   };
 
+  /** Chips com estilo premium (usa classes .chip/.chip--active definidas no globals.css) */
   const OptionButtons = ({
     field,
     options,
@@ -143,7 +144,7 @@ export default function Page() {
     field: keyof FormState;
     options: string[];
   }) => (
-    <div className="mt-2 flex flex-wrap gap-2">
+    <div className="chips">
       {options.map((opt) => {
         const active = (form[field] as any) === opt;
         return (
@@ -151,12 +152,7 @@ export default function Page() {
             type="button"
             key={opt}
             onClick={() => onChange(field, opt)}
-            className="px-3 py-2 rounded-xl border transition shadow-sm"
-            style={{
-              background: active ? brand.gradient : "white",
-              color: active ? "white" : "inherit",
-              borderColor: active ? "transparent" : "#e5e7eb",
-            }}
+            className={`chip ${active ? "chip--active" : ""}`}
           >
             {opt}
           </button>
@@ -179,10 +175,9 @@ export default function Page() {
             </h1>
           </header>
 
-          <section className="mb-10 bg-white rounded-2xl p-6 border shadow-sm">
-            <h2 className="text-xl font-semibold mb-2">
-              Visão rápida das respostas (beta)
-            </h2>
+          <section className="card mb-10">
+            <h2 className="card-title">Visão rápida das respostas (beta)</h2>
+            <hr />
             <p className="text-slate-600 mb-4">
               Distribuição das respostas para a pergunta:{" "}
               <span className="font-medium">“No-show é relevante?”</span>
@@ -205,14 +200,10 @@ export default function Page() {
           </section>
 
           <div className="flex gap-3">
-            <a href="/" className="px-5 py-3 rounded-2xl border">
+            <a href="/" className="btn btn-outline">
               Enviar outra resposta
             </a>
-            <a
-              href="/privacy"
-              className="px-5 py-3 rounded-2xl"
-              style={{ background: brand.gradient, color: "white" }}
-            >
+            <a href="/privacy" className="btn btn-primary">
               Política de privacidade
             </a>
           </div>
@@ -244,8 +235,8 @@ export default function Page() {
           <div className="mt-5">
             <a
               href="#form"
-              className="px-5 py-3 rounded-2xl font-medium shadow"
-              style={{ background: "white", color: "#0f172a" }}
+              className="btn btn-outline"
+              style={{ background: "#fff" }}
             >
               Começar agora
             </a>
@@ -256,7 +247,7 @@ export default function Page() {
       <div id="form" className="max-w-4xl mx-auto p-6 -mt-6">
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* Identificação (opcional) */}
-          <section className="bg-white rounded-2xl p-6 border shadow-sm">
+          <section className="card">
             <div className="mb-4">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white shadow-sm">
                 <span className="text-xs">Identificação (opcional)</span>
@@ -270,7 +261,7 @@ export default function Page() {
               <div>
                 <label className="text-sm text-slate-600">Nome</label>
                 <input
-                  className="mt-1 w-full border rounded-xl p-2"
+                  className="ui-input mt-1"
                   placeholder="Ex.: Dra. Maria Silva"
                   value={form.doctor_name}
                   onChange={(e) => onChange("doctor_name", e.target.value)}
@@ -279,7 +270,7 @@ export default function Page() {
               <div>
                 <label className="text-sm text-slate-600">CRM</label>
                 <input
-                  className="mt-1 w-full border rounded-xl p-2"
+                  className="ui-input mt-1"
                   placeholder="Ex.: CRM 12345"
                   value={form.crm}
                   onChange={(e) => onChange("crm", e.target.value)}
@@ -290,7 +281,7 @@ export default function Page() {
                   Contato (e-mail ou WhatsApp)
                 </label>
                 <input
-                  className="mt-1 w-full border rounded-xl p-2"
+                  className="ui-input mt-1"
                   placeholder="Ex.: (51) 9 9999-9999 ou nome@clinica.com"
                   value={form.contact}
                   onChange={(e) => onChange("contact", e.target.value)}
@@ -302,24 +293,23 @@ export default function Page() {
                 type="checkbox"
                 className="w-4 h-4"
                 checked={form.consent_contact}
-                onChange={(e) =>
-                  onChange("consent_contact", e.target.checked)
-                }
+                onChange={(e) => onChange("consent_contact", e.target.checked)}
               />
               Autorizo contato para falar sobre pilotos/entrevistas (opcional).
             </label>
           </section>
 
           {/* Perfil (opcional) */}
-          <section className="bg-white rounded-2xl p-6 border shadow-sm">
-            <h2 className="text-lg font-semibold">Perfil (opcional)</h2>
+          <section className="card">
+            <h2 className="card-title">Perfil (opcional)</h2>
+            <hr />
             <div className="mt-4 grid md:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm text-slate-600">
                   Especialidade / Função
                 </label>
                 <select
-                  className="mt-1 w-full border rounded-xl p-2"
+                  className="ui-select mt-1"
                   value={form.doctor_role}
                   onChange={(e) => onChange("doctor_role", e.target.value)}
                 >
@@ -336,7 +326,7 @@ export default function Page() {
                   Tamanho do consultório/clínica
                 </label>
                 <select
-                  className="mt-1 w-full border rounded-xl p-2"
+                  className="ui-select mt-1"
                   value={form.clinic_size}
                   onChange={(e) => onChange("clinic_size", e.target.value)}
                 >
@@ -350,8 +340,9 @@ export default function Page() {
           </section>
 
           {/* No-show */}
-          <section className="bg-white rounded-2xl p-6 border shadow-sm">
-            <h2 className="text-lg font-semibold">1) Faltas em Consultas (No-show)</h2>
+          <section className="card">
+            <h2 className="card-title">1) Faltas em Consultas (No-show)</h2>
+            <hr />
             <p className="text-slate-600 mt-1">
               Pacientes faltam sem avisar, prejudicando agenda e faturamento.
               Em muitos consultórios, os lembretes são manuais e
@@ -389,10 +380,9 @@ export default function Page() {
           </section>
 
           {/* Glosas */}
-          <section className="bg-white rounded-2xl p-6 border shadow-sm">
-            <h2 className="text-lg font-semibold">
-              2) Glosas de Convênios (Faturamento)
-            </h2>
+          <section className="card">
+            <h2 className="card-title">2) Glosas de Convênios (Faturamento)</h2>
+            <hr />
             <p className="text-slate-600 mt-1">
               Erros em guias TISS/TUSS geram glosas e atrasam o recebimento.
               Conferência manual é trabalhosa, especialmente em clínicas
@@ -430,10 +420,9 @@ export default function Page() {
           </section>
 
           {/* Receitas Digitais */}
-          <section className="bg-white rounded-2xl p-6 border shadow-sm">
-            <h2 className="text-lg font-semibold">
-              3) Receitas Digitais e Telemedicina
-            </h2>
+          <section className="card">
+            <h2 className="card-title">3) Receitas Digitais e Telemedicina</h2>
+            <hr />
             <p className="text-slate-600 mt-1">
               Com a prescrição eletrônica, surgem dúvidas sobre validação e
               envio correto ao paciente/farmácia, gerando retrabalho.
@@ -470,10 +459,11 @@ export default function Page() {
           </section>
 
           {/* Comentários + Consentimentos */}
-          <section className="bg-white rounded-2xl p-6 border shadow-sm">
-            <h2 className="text-lg font-semibold">Comentários e consentimentos</h2>
+          <section className="card">
+            <h2 className="card-title">Comentários e consentimentos</h2>
+            <hr />
             <textarea
-              className="mt-3 w-full border rounded-xl p-3"
+              className="ui-textarea mt-3"
               rows={4}
               placeholder="Se pudesse resolver apenas um problema agora, qual seria?"
               value={form.comments}
@@ -497,7 +487,8 @@ export default function Page() {
                 </span>
               </label>
               <p className="text-xs text-slate-500">
-                Não solicitamos dados sensíveis de pacientes. Identificação é opcional.
+                Não solicitamos dados sensíveis de pacientes. Identificação é
+                opcional.
               </p>
             </div>
           </section>
@@ -507,15 +498,11 @@ export default function Page() {
           <div className="flex flex-wrap gap-3">
             <button
               disabled={!canSubmit || submitting}
-              className="px-5 py-3 rounded-2xl text-white font-medium shadow-md transition"
-              style={{
-                background: canSubmit ? brand.gradient : "#9ca3af",
-                cursor: canSubmit ? "pointer" : "not-allowed",
-              }}
+              className={`btn ${canSubmit ? "btn-primary" : "btn-outline"}`}
             >
               {submitting ? "Enviando…" : "Enviar respostas (2–3 min)"}
             </button>
-            <a href="/privacy" className="px-5 py-3 rounded-2xl border">
+            <a href="/privacy" className="btn btn-outline">
               Ver política de privacidade
             </a>
           </div>
@@ -528,3 +515,4 @@ export default function Page() {
     </div>
   );
 }
+
