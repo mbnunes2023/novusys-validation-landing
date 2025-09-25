@@ -12,3 +12,59 @@ body {
   background: var(--background);
   font-feature-settings: "rlig" 1, "calt" 1;
 }
+
+/* ======= Brand Bar premium (fixa no topo) ======= */
+.brand-bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(255,255,255,0.9);
+  backdrop-filter: saturate(140%) blur(8px);
+  border-bottom: 1px solid rgba(15,23,42,0.06);
+}
+
+.brand-bar__inner {
+  max-width: 72rem; /* ~1152px */
+  margin: 0 auto;
+  padding: 0.6rem 1.5rem;
+  display: grid;
+  justify-items: center;
+}
+
+.brand-bar__logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  box-shadow: 0 4px 14px rgba(25,118,210,0.2);
+  object-fit: contain;
+}
+
+.brand-bar__text {
+  display: grid;
+  justify-items: center;
+  margin-top: 0.25rem;
+  line-height: 1;
+}
+
+.brand-bar__name {
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: 0.2px;
+}
+
+.brand-bar__tagline {
+  font-size: 0.8rem;
+  color: #64748b; /* slate-500 */
+}
+
+/* Dá respiro abaixo da brand bar para o conteúdo não colar no topo */
+.page-wrap {
+  padding-top: 0.5rem;
+}
+
+/* Ajuste geral do corpo (já existia) */
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
