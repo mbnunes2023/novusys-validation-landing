@@ -215,13 +215,6 @@ export default function Page() {
             <a href="/" className="btn btn-outline">
               Enviar outra resposta
             </a>
-            <a
-              href="/privacy"
-              className="btn btn-primary"
-              style={{ backgroundImage: brand.gradient }}
-            >
-              Política de privacidade
-            </a>
           </div>
 
           <footer className="mt-10 text-xs text-slate-500">
@@ -530,33 +523,24 @@ export default function Page() {
 
           {error && <div className="text-red-600 text-sm">{error}</div>}
 
-          {/* ===== Barra de ações: apenas os botões, centralizados ===== */}
+          {/* ===== Barra de ações: APENAS o botão Enviar centralizado ===== */}
           <div
             className="actions mt-6"
-            style={{
-              justifyContent: "center",
-              gap: 12,
-            }}
+            style={{ justifyContent: "center", gap: 12 }}
           >
             <button
               disabled={!canSubmit || submitting}
               className="btn btn-primary"
               type="submit"
-              style={{ backgroundImage: brand.gradient }}
+              style={{
+                backgroundImage: canSubmit ? brand.gradient : "none",
+                background: canSubmit ? undefined : "#9ca3af",
+                cursor: canSubmit ? "pointer" : "not-allowed",
+                opacity: canSubmit ? 1 : 0.85,
+              }}
             >
               {submitting ? "Enviando…" : "Enviar respostas"}
             </button>
-
-            <a
-              href="/privacy"
-              className="btn btn-outline"
-              style={{
-                background: "#f4f6fb", // leve cinza-azulado para não ficar branco chapado
-                borderColor: "var(--edge)",
-              }}
-            >
-              Política de privacidade
-            </a>
           </div>
 
           <footer className="mt-10 text-xs text-slate-500 text-center">
@@ -567,4 +551,3 @@ export default function Page() {
     </div>
   );
 }
-
