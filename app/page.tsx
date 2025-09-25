@@ -183,7 +183,7 @@ export default function Page() {
         <div className="max-w-4xl mx-auto p-6">
           <header className="mb-8">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white shadow-sm">
-              <span className="text-xs">MVP • Pesquisa de Validação</span>
+              <span className="text-xs">Pesquisa concluída</span>
             </div>
             <h1 className="text-3xl md:text-4xl font-bold mt-2">
               Obrigado pela resposta!
@@ -218,7 +218,7 @@ export default function Page() {
           </div>
 
           <footer className="mt-10 text-xs text-slate-500 text-center">
-            © {new Date().getFullYear()} <span className="font-medium">NovuSys</span> — Todos os direitos reservados.
+            © {new Date().getFullYear()} <span className="font-medium">NovuSys</span> — Todos os direitos reservados.{" "}
             <a href="/privacy" className="underline">Política de privacidade</a>
           </footer>
         </div>
@@ -235,12 +235,12 @@ export default function Page() {
         style={{ background: brand.gradient, color: "white" }}
       >
         <div className="max-w-4xl mx-auto px-6 py-10">
-          <h1 className="text-3xl md:text-5xl font-extrabold leading-tight drop-shadow">
-            Validação de Dores em Clínicas Médicas
+          {/* Título curto e profissional, cabe em uma linha */}
+          <h1 className="text-3xl md:text-4xl font-extrabold leading-tight drop-shadow">
+            Pesquisa para Clínicas e Consultórios
           </h1>
           <p className="mt-3 text-white/90 max-w-2xl">
-            Pesquisa rápida (2–3 min) para entender o que realmente importa no
-            seu dia a dia.
+            Leva 2–3 minutos. Queremos entender o que realmente importa no seu dia a dia para priorizar um MVP útil.
           </p>
           <div className="mt-5">
             <a
@@ -263,8 +263,7 @@ export default function Page() {
               Identificação <span className="badge-soft">opcional</span>
             </div>
             <p className="text-sm text-slate-500 mt-1">
-              Se desejar, informe seus dados para que possamos entrar em contato
-              sobre pilotos/entrevistas.
+              Se desejar, informe seus dados para contato sobre pilotos/entrevistas.
             </p>
             <hr />
             <div className="grid md:grid-cols-3 gap-4">
@@ -307,8 +306,7 @@ export default function Page() {
                   onChange={(e) => onChange("consent_contact", e.target.checked)}
                 />
                 <span>
-                  Autorizo contato para falar sobre pilotos/entrevistas
-                  (opcional).
+                  Autorizo contato para falar sobre pilotos/entrevistas (opcional).
                 </span>
               </label>
             </div>
@@ -364,37 +362,21 @@ export default function Page() {
               1) Faltas em Consultas (No-show)
             </div>
             <p className="text-slate-600 mt-1">
-              Pacientes faltam sem avisar, prejudicando agenda e faturamento. Em
-              muitos consultórios, os lembretes são manuais e descentralizados.
+              Faltas sem aviso prejudicam agenda e faturamento — em muitos consultórios os lembretes são manuais.
             </p>
             <hr />
             <div className="grid gap-4">
               <div>
-                <label className="text-sm font-medium">
-                  Essa dor é relevante na sua prática?
-                </label>
-                <OptionButtons
-                  field="q_noshow_relevance"
-                  options={["Sim", "Não", "Parcialmente"]}
-                />
+                <label className="text-sm font-medium">Essa questão é relevante?</label>
+                <OptionButtons field="q_noshow_relevance" options={["Sim", "Não", "Parcialmente"]} />
               </div>
               <div>
-                <label className="text-sm font-medium">
-                  Você já usa algum sistema que resolve bem esse problema?
-                </label>
-                <OptionButtons
-                  field="q_noshow_has_system"
-                  options={["Sim", "Não"]}
-                />
+                <label className="text-sm font-medium">Já usa um sistema que resolva bem?</label>
+                <OptionButtons field="q_noshow_has_system" options={["Sim", "Não"]} />
               </div>
               <div>
-                <label className="text-sm font-medium">
-                  Qual o impacto financeiro mensal?
-                </label>
-                <OptionButtons
-                  field="q_noshow_financial_impact"
-                  options={["Baixo impacto", "Médio impacto", "Alto impacto"]}
-                />
+                <label className="text-sm font-medium">Impacto financeiro mensal</label>
+                <OptionButtons field="q_noshow_financial_impact" options={["Baixo impacto", "Médio impacto", "Alto impacto"]} />
               </div>
             </div>
           </section>
@@ -406,38 +388,21 @@ export default function Page() {
               2) Glosas de Convênios (Faturamento)
             </div>
             <p className="text-slate-600 mt-1">
-              Erros em guias TISS/TUSS geram glosas e atrasam o recebimento.
-              Conferência manual é trabalhosa, especialmente em clínicas
-              menores.
+              Erros em guias TISS/TUSS geram glosas e atrasam recebimento — conferência manual é trabalhosa.
             </p>
             <hr />
             <div className="grid gap-4">
               <div>
-                <label className="text-sm font-medium">
-                  Glosas são um problema recorrente?
-                </label>
-                <OptionButtons
-                  field="q_glosa_is_problem"
-                  options={["Sim", "Não", "Às vezes"]}
-                />
+                <label className="text-sm font-medium">Glosas são recorrentes?</label>
+                <OptionButtons field="q_glosa_is_problem" options={["Sim", "Não", "Às vezes"]} />
               </div>
               <div>
-                <label className="text-sm font-medium">
-                  Interesse em uma checagem rápida antes do envio?
-                </label>
-                <OptionButtons
-                  field="q_glosa_interest"
-                  options={["Sim", "Não", "Talvez"]}
-                />
+                <label className="text-sm font-medium">Interesse em checagem rápida antes do envio?</label>
+                <OptionButtons field="q_glosa_interest" options={["Sim", "Não", "Talvez"]} />
               </div>
               <div>
-                <label className="text-sm font-medium">
-                  Quem sofre mais com o problema?
-                </label>
-                <OptionButtons
-                  field="q_glosa_who_suffers"
-                  options={["Médico", "Administrativo", "Ambos"]}
-                />
+                <label className="text-sm font-medium">Quem sofre mais?</label>
+                <OptionButtons field="q_glosa_who_suffers" options={["Médico", "Administrativo", "Ambos"]} />
               </div>
             </div>
           </section>
@@ -449,37 +414,21 @@ export default function Page() {
               3) Receitas Digitais e Telemedicina
             </div>
             <p className="text-slate-600 mt-1">
-              Com a prescrição eletrônica, surgem dúvidas sobre validação e
-              envio correto ao paciente/farmácia, gerando retrabalho.
+              Na prescrição eletrônica, há dúvidas sobre validação e envio correto ao paciente/farmácia.
             </p>
             <hr />
             <div className="grid gap-4">
               <div>
-                <label className="text-sm font-medium">
-                  Isso já gerou retrabalho em sua clínica?
-                </label>
-                <OptionButtons
-                  field="q_rx_rework"
-                  options={["Sim", "Não", "Raramente"]}
-                />
+                <label className="text-sm font-medium">Gerou retrabalho na clínica?</label>
+                <OptionButtons field="q_rx_rework" options={["Sim", "Não", "Raramente"]} />
               </div>
               <div>
-                <label className="text-sm font-medium">
-                  Pacientes têm dificuldade nesse processo?
-                </label>
-                <OptionButtons
-                  field="q_rx_elderly_difficulty"
-                  options={["Sim", "Não", "Em parte"]}
-                />
+                <label className="text-sm font-medium">Pacientes têm dificuldade?</label>
+                <OptionButtons field="q_rx_elderly_difficulty" options={["Sim", "Não", "Em parte"]} />
               </div>
               <div>
-                <label className="text-sm font-medium">
-                  Vê valor em uma ferramenta que auxilie nesse fluxo?
-                </label>
-                <OptionButtons
-                  field="q_rx_tool_value"
-                  options={["Sim", "Não", "Talvez"]}
-                />
+                <label className="text-sm font-medium">Veria valor em uma ferramenta de apoio?</label>
+                <OptionButtons field="q_rx_tool_value" options={["Sim", "Não", "Talvez"]} />
               </div>
             </div>
           </section>
@@ -507,28 +456,19 @@ export default function Page() {
                   onChange={(e) => onChange("consent", e.target.checked)}
                 />
                 <span>
-                  Declaro que{" "}
-                  <a href="/privacy" className="underline">
-                    li e concordo com a Política de Privacidade
-                  </a>{" "}
-                  e <strong>autorizo o uso anônimo</strong> destas respostas
-                  para fins de validação de produto.
+                  Declaro que <a href="/privacy" className="underline">li e concordo com a Política de Privacidade</a> e <strong>autorizo o uso anônimo</strong> destas respostas para fins de validação de produto.
                 </span>
               </label>
               <p className="text-xs text-slate-500">
-                Não solicitamos dados sensíveis de pacientes. Identificação é
-                opcional.
+                Não solicitamos dados sensíveis de pacientes. Identificação é opcional.
               </p>
             </div>
           </section>
 
           {error && <div className="text-red-600 text-sm">{error}</div>}
 
-          {/* ===== Barra de ações: APENAS o botão Enviar centralizado ===== */}
-          <div
-            className="actions mt-6"
-            style={{ justifyContent: "center", gap: 12 }}
-          >
+          {/* Barra de ações – apenas o botão Enviar centralizado */}
+          <div className="actions mt-6" style={{ justifyContent: "center", gap: 12 }}>
             <button
               disabled={!canSubmit || submitting}
               className="btn btn-primary"
@@ -545,10 +485,12 @@ export default function Page() {
           </div>
 
           <footer className="mt-10 text-xs text-slate-500 text-center">
-            MVP • {new Date().getFullYear()}
+            © {new Date().getFullYear()} <span className="font-medium">NovuSys</span> — Todos os direitos reservados.{" "}
+            <a href="/privacy" className="underline">Política de privacidade</a>
           </footer>
         </form>
       </div>
     </div>
   );
 }
+
