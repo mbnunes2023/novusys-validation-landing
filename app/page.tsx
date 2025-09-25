@@ -460,7 +460,7 @@ export default function Page() {
                 </span>
               </label>
               <p className="text-xs text-slate-500">
-                Não solicitamos dados sensíveis de pacientes. Identificação é opcional.
+                Não solicitamos dados sensíveis. Identificação é opcional.
               </p>
             </div>
           </section>
