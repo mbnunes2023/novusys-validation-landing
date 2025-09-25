@@ -9,11 +9,6 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-br">
-      <body>
-        {/* BRAND BAR: apenas o logo central, grande */}
-        <header className="brand-bar">
-          <div className="brand-bar__inner">
-            <img src="/logo.png" alt="NovuSys" className="brand-bar__logo" />
           </div>
         </header>
 
