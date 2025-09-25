@@ -53,3 +53,95 @@ body {
   .brand-bar { height: 140px; }
   .brand-bar__logo { width: 220px; height: 220px; }
 }
+
+/* ===== NovuSys UI – cartões, inputs, chips e botões ===== */
+
+/* Card branco com contraste e borda sutil */
+.card {
+  background: #ffffff;
+  border: 1px solid rgba(15,23,42,.08);     /* slate-900/8 */
+  border-radius: 16px;
+  padding: 1.25rem;                          /* ~p-5 */
+  box-shadow: 0 8px 28px rgba(2,6,23,.06);   /* sombra suave */
+}
+
+/* Títulos de seção com leve destaque */
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-weight: 600;
+  font-size: 1.125rem; /* text-lg */
+  letter-spacing: .1px;
+}
+
+/* Linha divisória sutil dentro do card */
+.card hr {
+  border: none;
+  border-top: 1px solid rgba(15,23,42,.06);
+  margin: .75rem 0 1rem;
+}
+
+/* Inputs/Selects/Textareas consistentes */
+.ui-input,
+.ui-select,
+.ui-textarea {
+  width: 100%;
+  border: 1px solid rgba(15,23,42,.12);
+  border-radius: 12px;
+  padding: .55rem .75rem;
+  background: #fff;
+  outline: none;
+  transition: box-shadow .15s ease, border-color .15s ease, transform .05s ease;
+}
+.ui-input:focus,
+.ui-select:focus,
+.ui-textarea:focus {
+  border-color: #1976d2;
+  box-shadow: 0 0 0 4px rgba(25,118,210,.12);
+}
+.ui-input:hover,
+.ui-select:hover,
+.ui-textarea:hover {
+  border-color: rgba(15,23,42,.22);
+}
+
+/* Chips das opções (on/off) */
+.chips { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.5rem; }
+.chip {
+  border:1px solid rgba(15,23,42,.12);
+  background:#fff;
+  padding:.45rem .75rem;
+  border-radius:12px;
+  box-shadow: 0 1px 0 rgba(2,6,23,.04) inset;
+  transition: transform .05s ease, box-shadow .15s ease, background .15s ease, color .15s ease;
+}
+.chip:hover { border-color: rgba(15,23,42,.22); }
+.chip--active {
+  background: linear-gradient(135deg, #1976d2 0%, #6a11cb 60%, #2575fc 100%);
+  border-color: transparent;
+  color:#fff;
+  box-shadow: 0 6px 18px rgba(25,118,210,.25);
+  transform: translateY(-1px);
+}
+
+/* Botões */
+.btn {
+  border-radius: 16px;
+  padding:.75rem 1.1rem;
+  font-weight:600;
+  transition: transform .05s ease, box-shadow .15s ease, background .15s ease;
+}
+.btn:disabled { opacity:.6; cursor:not-allowed; }
+.btn-primary {
+  background: linear-gradient(135deg, #1976d2 0%, #6a11cb 60%, #2575fc 100%);
+  color:#fff;
+  box-shadow: 0 8px 20px rgba(25,118,210,.25);
+}
+.btn-primary:hover { transform: translateY(-1px); }
+.btn-outline {
+  border:1px solid rgba(15,23,42,.14);
+  background:#fff;
+  color:#0f172a;
+}
+.btn-outline:hover { border-color: rgba(15,23,42,.25); }
