@@ -36,7 +36,7 @@ body {
   width: 320px;   /* era 64px */
   height: 320px;  /* era 64px */
   border-radius: 22px;
-  box-shadow: 0 6px 22px rgba(25,25,25,25);
+  box-shadow: 0 6px 22px rgba(25,118,210,0.28);
   object-fit: contain;
   transition: transform .2s ease;
 }
