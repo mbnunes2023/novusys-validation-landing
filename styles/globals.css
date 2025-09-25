@@ -33,8 +33,8 @@ body {
 
 /* Aumente aqui se quiser ainda maior (ex.: 112px ou 128px) */
 .brand-bar__logo {
-  width: 96px;   /* era 64px */
-  height: 96px;  /* era 64px */
+  width: 320px;   /* era 64px */
+  height: 320px;  /* era 64px */
   border-radius: 22px;
   box-shadow: 0 6px 22px rgba(25,118,210,0.28);
   object-fit: contain;
