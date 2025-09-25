@@ -200,7 +200,6 @@ export default function Page() {
     );
   };
 
-  /** Barra de ações final com meta-info (confiança) */
   {/* Barra de ações final */}
 <div className="actions mt-6">
   <div className="meta">
@@ -223,7 +222,6 @@ export default function Page() {
     Política de privacidade
   </a>
 </div>
-  );
 
   // ======= Tela de agradecimento =======
   if (submitted) {
