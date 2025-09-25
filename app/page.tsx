@@ -136,7 +136,7 @@ export default function Page() {
     }
   };
 
-  /** Chips com estilo premium (usa classes .chip/.chip--active definidas no globals.css) */
+  /** Chips premium (usa classes definidas no globals.css) */
   const OptionButtons = ({
     field,
     options,
@@ -161,10 +161,41 @@ export default function Page() {
     </div>
   );
 
+  /** Mini stepper simples (âncoras) */
+  const Stepper = () => {
+    const steps = [
+      { id: "noshow", label: "Etapa 1 · Faltas" },
+      { id: "glosas", label: "Etapa 2 · Glosas" },
+      { id: "rx", label: "Etapa 3 · Receitas" },
+    ];
+    return (
+      <div className="card -mt-6 mb-6">
+        <div className="flex flex-wrap items-center gap-2 justify-between">
+          {steps.map((s, i) => (
+            <a
+              key={s.id}
+              href={`#${s.id}`}
+              className="btn btn-outline"
+              style={{ padding: ".55rem .9rem" }}
+            >
+              <span
+                className="inline-flex items-center justify-center w-6 h-6 mr-2 rounded-full text-white text-xs"
+                style={{ background: brand.gradient }}
+              >
+                {i + 1}
+              </span>
+              {s.label}
+            </a>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // ======= Tela de agradecimento =======
   if (submitted) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50">
+      <div className="min-h-screen bg-gradient-to-b from-[#f6f7fb] to-slate-50">
         <div className="max-w-4xl mx-auto p-6">
           <header className="mb-8">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white shadow-sm">
@@ -176,7 +207,12 @@ export default function Page() {
           </header>
 
           <section className="card mb-10">
-            <h2 className="card-title">Visão rápida das respostas (beta)</h2>
+            <h2
+              className="card-title text-transparent bg-clip-text"
+              style={{ backgroundImage: brand.gradient }}
+            >
+              Visão rápida das respostas (beta)
+            </h2>
             <hr />
             <p className="text-slate-600 mb-4">
               Distribuição das respostas para a pergunta:{" "}
@@ -219,7 +255,7 @@ export default function Page() {
   // ======= Formulário =======
   return (
     <div className="min-h-screen">
-      {/* HERO premium (sem logo e sem texto de marca) */}
+      {/* HERO premium */}
       <section
         className="w-full"
         style={{ background: brand.gradient, color: "white" }}
@@ -233,11 +269,7 @@ export default function Page() {
             seu dia a dia.
           </p>
           <div className="mt-5">
-            <a
-              href="#form"
-              className="btn btn-outline"
-              style={{ background: "#fff" }}
-            >
+            <a href="#form" className="btn btn-outline" style={{ background: "#fff" }}>
               Começar agora
             </a>
           </div>
@@ -245,6 +277,9 @@ export default function Page() {
       </section>
 
       <div id="form" className="max-w-4xl mx-auto p-6 -mt-6">
+        {/* STEP INDICATOR */}
+        <Stepper />
+
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* Identificação (opcional) */}
           <section className="card">
@@ -301,7 +336,12 @@ export default function Page() {
 
           {/* Perfil (opcional) */}
           <section className="card">
-            <h2 className="card-title">Perfil (opcional)</h2>
+            <h2
+              className="card-title text-transparent bg-clip-text"
+              style={{ backgroundImage: brand.gradient }}
+            >
+              Perfil (opcional)
+            </h2>
             <hr />
             <div className="mt-4 grid md:grid-cols-2 gap-4">
               <div>
@@ -340,8 +380,13 @@ export default function Page() {
           </section>
 
           {/* No-show */}
-          <section className="card">
-            <h2 className="card-title">1) Faltas em Consultas (No-show)</h2>
+          <section id="noshow" className="card">
+            <h2
+              className="card-title text-transparent bg-clip-text"
+              style={{ backgroundImage: brand.gradient }}
+            >
+              1) Faltas em Consultas (No-show)
+            </h2>
             <hr />
             <p className="text-slate-600 mt-1">
               Pacientes faltam sem avisar, prejudicando agenda e faturamento.
@@ -377,11 +422,19 @@ export default function Page() {
                 />
               </div>
             </div>
+            <p className="text-xs text-slate-500 mt-4">
+              Suas respostas nos ajudam a priorizar lembretes inteligentes para reduzir faltas.
+            </p>
           </section>
 
           {/* Glosas */}
-          <section className="card">
-            <h2 className="card-title">2) Glosas de Convênios (Faturamento)</h2>
+          <section id="glosas" className="card">
+            <h2
+              className="card-title text-transparent bg-clip-text"
+              style={{ backgroundImage: brand.gradient }}
+            >
+              2) Glosas de Convênios (Faturamento)
+            </h2>
             <hr />
             <p className="text-slate-600 mt-1">
               Erros em guias TISS/TUSS geram glosas e atrasam o recebimento.
@@ -417,11 +470,19 @@ export default function Page() {
                 />
               </div>
             </div>
+            <p className="text-xs text-slate-500 mt-4">
+              Queremos reduzir retrabalho com checagens automáticas antes do envio ao convênio.
+            </p>
           </section>
 
           {/* Receitas Digitais */}
-          <section className="card">
-            <h2 className="card-title">3) Receitas Digitais e Telemedicina</h2>
+          <section id="rx" className="card">
+            <h2
+              className="card-title text-transparent bg-clip-text"
+              style={{ backgroundImage: brand.gradient }}
+            >
+              3) Receitas Digitais e Telemedicina
+            </h2>
             <hr />
             <p className="text-slate-600 mt-1">
               Com a prescrição eletrônica, surgem dúvidas sobre validação e
@@ -456,11 +517,19 @@ export default function Page() {
                 />
               </div>
             </div>
+            <p className="text-xs text-slate-500 mt-4">
+              Ajudaremos pacientes e equipe com passos claros e validações automáticas.
+            </p>
           </section>
 
           {/* Comentários + Consentimentos */}
           <section className="card">
-            <h2 className="card-title">Comentários e consentimentos</h2>
+            <h2
+              className="card-title text-transparent bg-clip-text"
+              style={{ backgroundImage: brand.gradient }}
+            >
+              Comentários e consentimentos
+            </h2>
             <hr />
             <textarea
               className="ui-textarea mt-3"
@@ -515,4 +584,3 @@ export default function Page() {
     </div>
   );
 }
-
