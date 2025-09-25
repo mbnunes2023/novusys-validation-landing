@@ -13,7 +13,7 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
 }
 
-/* ======= Brand Bar premium (fixa no topo) ======= */
+/* ======= Brand Bar premium (logo grande e central) ======= */
 .brand-bar {
   position: sticky;
   top: 0;
@@ -26,45 +26,21 @@ body {
 .brand-bar__inner {
   max-width: 72rem; /* ~1152px */
   margin: 0 auto;
-  padding: 0.6rem 1.5rem;
+  padding: 0.4rem 1.5rem;
   display: grid;
-  justify-items: center;
+  place-items: center; /* centraliza totalmente */
 }
 
+/* Aumente aqui se quiser ainda maior (ex.: 112px ou 128px) */
 .brand-bar__logo {
-  width: 320px;
-  height: 320px;
-  border-radius: 16px;
-  box-shadow: 0 4px 14px rgba(25,118,210,0.2);
+  width: 96px;   /* era 64px */
+  height: 96px;  /* era 64px */
+  border-radius: 22px;
+  box-shadow: 0 6px 22px rgba(25,118,210,0.28);
   object-fit: contain;
+  transition: transform .2s ease;
 }
+.brand-bar__logo:hover { transform: scale(1.02); }
 
-.brand-bar__text {
-  display: grid;
-  justify-items: center;
-  margin-top: 0.25rem;
-  line-height: 1;
-}
-
-.brand-bar__name {
-  font-weight: 800;
-  font-size: 1.15rem;
-  letter-spacing: 0.2px;
-}
-
-.brand-bar__tagline {
-  font-size: 0.8rem;
-  color: #64748b; /* slate-500 */
-}
-
-/* Dá respiro abaixo da brand bar para o conteúdo não colar no topo */
-.page-wrap {
-  padding-top: 0.5rem;
-}
-
-/* Ajuste geral do corpo (já existia) */
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-feature-settings: "rlig" 1, "calt" 1;
-}
+/* Respiro abaixo da brand bar para o conteúdo não colar no topo */
+.page-wrap { padding-top: 0.5rem; }
