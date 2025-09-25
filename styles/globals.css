@@ -259,3 +259,16 @@ html,body{ background:var(--page-bg); }
 
 /* Pequena melhora de legibilidade das descrições dentro dos cards */
 .card p{ color:#4b5563; }
+
+/* Badge suave para marcar "opcional" no título dos cards */
+.badge-soft{
+  display:inline-flex; align-items:center; gap:.4rem;
+  padding:.25rem .55rem;
+  border:1px solid var(--edge);
+  border-radius:9999px;
+  background:#f8fafc;
+  color:#64748b;
+  font-size:.72rem;
+  font-weight:600;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
+}
