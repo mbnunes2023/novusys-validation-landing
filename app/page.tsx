@@ -217,8 +217,9 @@ export default function Page() {
             </a>
           </div>
 
-          <footer className="mt-10 text-xs text-slate-500">
-            {new Date().getFullYear()}
+          <footer className="mt-10 text-xs text-slate-500 text-center">
+            © {new Date().getFullYear()} <span className="font-medium">NovuSys</span> — Todos os direitos reservados.
+            <a href="/privacy" className="underline">Política de privacidade</a>
           </footer>
         </div>
       </div>
