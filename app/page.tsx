@@ -226,9 +226,8 @@ export default function Page() {
         }}
       >
         <div className="max-w-4xl mx-auto px-6 py-10">
-          <div className="flex items-center gap-3 mb-3">
-            <img src="/logo.png" alt="NovuSys" className="w-10 h-10 rounded-xl shadow" />
-            <div className="text-sm opacity-90">{brand.name} — {brand.tagline}</div>
+          <div className="mb-3 text-sm opacity-90">
+            {brand.name} — {brand.tagline}
           </div>
           <h1 className="text-3xl md:text-5xl font-extrabold leading-tight drop-shadow">
             Validação de Dores em Clínicas Médicas
