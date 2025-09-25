@@ -272,3 +272,55 @@ html,body{ background:var(--page-bg); }
   font-weight:600;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.45);
 }
+
+/* ===== Ações finais (meta + botões) – alinhado à identidade ===== */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  padding: 12px 16px;
+  box-shadow: var(--card-shadow);
+}
+
+.actions .meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: .875rem; /* ~text-sm */
+  color: var(--ink-2);
+}
+
+/* pontinho com o gradiente da marca */
+.actions .meta .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-image: var(--brand-grad);
+  box-shadow: 0 0 0 3px rgba(25,118,210,.15);
+}
+
+.actions .spacer { flex: 1; }
+
+/* Botão primário: mantém o gradiente mesmo desabilitado (apenas reduz opacidade) */
+.btn-primary[disabled],
+.btn-primary:disabled {
+  background-image: var(--brand-grad);
+  color: #fff;
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Botão outline – sutil, com contraste */
+.btn-outline {
+  color: #0f172a;
+  border: 1px solid var(--edge);
+  background: #fff;
+}
+.btn-outline:hover {
+  border-color: #cfd7e6;
+}
