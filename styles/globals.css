@@ -145,3 +145,13 @@ body {
   color:#0f172a;
 }
 .btn-outline:hover { border-color: rgba(15,23,42,.25); }
+
+/* Fundo geral um pouco mais escuro */
+:root {
+  --page-bg: #f6f7fb; /* bem sutil: azul acinzentado claro */
+}
+
+html, body {
+  background: var(--page-bg);
+}
+
