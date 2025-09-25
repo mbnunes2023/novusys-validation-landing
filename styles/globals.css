@@ -32,8 +32,8 @@ body {
 }
 
 .brand-bar__logo {
-  width: 96px;                         /* ajuste como preferir */
-  height: 96px;
+  width: 360px;                         /* ajuste como preferir */
+  height: 360px;
   border-radius: 0;                    /* sem cantos arredondados */
   box-shadow: none;                    /* sem sombra/glow */
   object-fit: contain;
