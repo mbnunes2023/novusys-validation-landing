@@ -279,7 +279,7 @@ export default function Page() {
       >
         <div className="max-w-4xl mx-auto px-6 py-10">
           <h1 className="text-3xl md:text-5xl font-extrabold leading-tight drop-shadow">
-            Validação de Dores em Clínicas Médicas
+            Validação de Dores em Clínicas e Consultórios Médicos
           </h1>
           <p className="mt-3 text-white/90 max-w-2xl">
             Pesquisa rápida (2–3 min) para entender o que realmente importa no
