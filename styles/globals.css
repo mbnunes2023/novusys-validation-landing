@@ -155,3 +155,107 @@ html, body {
   background: var(--page-bg);
 }
 
+/* Paleta/variáveis */
+:root{
+  --brand-1:#1976d2;
+  --brand-grad: linear-gradient(135deg,#1976d2 0%,#6a11cb 50%,#2575fc 100%);
+  --ink-2:#64748b; /* slate-500 */
+  --edge:#e6eaf4;  /* borda mais fria, premium */
+  --card-shadow:0 10px 30px rgba(2,8,23,.06);
+  --chip-shadow:0 10px 22px rgba(37,117,252,.16);
+  --page-bg:#f6f7fb;
+}
+
+/* Fundo geral */
+html,body{ background:var(--page-bg); }
+
+/* Cartão premium */
+.card{
+  background:#fff;
+  border:1px solid var(--edge);
+  border-radius:16px;
+  padding:24px;
+  box-shadow:var(--card-shadow);
+}
+.card hr{ border:0; height:1px; background:linear-gradient(90deg,#0000, #e9edf7, #0000); margin:10px 0 14px; }
+.card-title{
+  font-weight:800;
+  font-size:1.12rem;
+  letter-spacing:-.01em;
+}
+
+/* Ponto gradiente antes do título (aumenta a hierarquia visual) */
+.title-dot{
+  width:10px; height:10px; border-radius:9999px; display:inline-block; margin-right:.55rem;
+  background-image:var(--brand-grad);
+  box-shadow:0 0 0 4px rgba(25,118,210,.12);
+}
+
+/* Inputs/coerência visual */
+.ui-input,.ui-select,.ui-textarea{
+  width:100%;
+  border:1px solid var(--edge);
+  background:#fff;
+  border-radius:12px;
+  padding:.55rem .75rem;
+  outline:none;
+  transition: box-shadow .18s ease, border-color .18s ease, transform .12s ease;
+  box-shadow: inset 0 1px 0 rgba(2,8,23,.02);
+}
+.ui-textarea{ padding:.75rem .85rem; resize:vertical; }
+.ui-input:focus,.ui-select:focus,.ui-textarea:focus{
+  border-color:#c9d6ff;
+  box-shadow:0 0 0 4px rgba(37,117,252,.15);
+}
+
+/* Conjunto de chips */
+.chips{ display:flex; flex-wrap:wrap; gap:.5rem; }
+.chip{
+  border:1px solid #d8e0ef;
+  border-radius:12px;
+  padding:.5rem .75rem;
+  background:#fff;
+  font-weight:500;
+  transition: transform .12s ease, box-shadow .18s ease, background .18s ease, color .18s ease, border-color .18s ease;
+}
+.chip:hover{ transform:translateY(-1px); box-shadow:0 6px 14px rgba(30,64,175,.08); }
+.chip--active{
+  background-image:var(--brand-grad);
+  color:#fff;
+  border-color:transparent;
+  box-shadow:var(--chip-shadow);
+  transform:translateY(-1px);
+}
+.chip:focus-visible{ outline:3px solid rgba(37,117,252,.35); outline-offset:2px; }
+
+/* Botões */
+.btn{
+  border-radius:14px;
+  padding:.7rem 1rem;
+  font-weight:600;
+  transition: transform .12s ease, box-shadow .18s ease, opacity .18s ease, background .18s ease;
+}
+.btn:disabled{ opacity:.55; cursor:not-allowed; }
+.btn-primary{
+  color:#fff;
+  background-image:var(--brand-grad);
+  box-shadow:0 12px 22px rgba(37,117,252,.28);
+}
+.btn-primary:hover{ transform:translateY(-1px); }
+.btn-outline{
+  background:#fff;
+  border:1px solid #d8e0ef;
+}
+.btn-outline:hover{ transform:translateY(-1px); box-shadow:0 8px 18px rgba(2,8,23,.06); }
+
+/* Barra de ações final (CTA com meta-info) */
+.actions{
+  display:flex; align-items:center; gap:12px;
+  background:#fff; border:1px solid var(--edge); border-radius:16px;
+  padding:12px 16px; box-shadow:var(--card-shadow);
+}
+.actions .meta{ font-size:.8rem; color:var(--ink-2); }
+.actions .spacer{ flex:1; }
+
+/* Pequena melhora de legibilidade das descrições dentro dos cards */
+.card p{ color:#4b5563; }
