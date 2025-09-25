@@ -116,10 +116,12 @@ export default function PrivacyPage() {
             </li>
           </ol>
 
+          {/* Botão com a cor do Hero */}
           <div className="mt-8">
             <a
               href="/"
-              className="inline-flex items-center px-4 py-2 rounded-2xl border text-slate-800 hover:bg-slate-50"
+              className="inline-flex items-center px-5 py-3 rounded-2xl text-white font-semibold shadow-md transition"
+              style={{ backgroundImage: brand.gradient }}
             >
               Voltar ao formulário
             </a>
