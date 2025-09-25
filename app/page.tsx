@@ -35,14 +35,6 @@ type FormState = {
   consent: boolean; // "Li e concordo com a Política e autorizo uso anônimo"
 };
 
-export default function Page() {
-  const brand = {
-    name: "NovuSys",
-    tagline: "Transformamos códigos em resultados",
-    color: "#1976d2",
-    gradient: "linear-gradient(135deg, #1976d2 0%, #6a11cb 50%, #2575fc 100%)",
-  };
-
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
