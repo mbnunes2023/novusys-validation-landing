@@ -218,7 +218,7 @@ export default function Page() {
 
   // ======= Formulário =======
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen">
       {/* HERO premium (sem logo e sem texto de marca) */}
       <section
         className="w-full"
