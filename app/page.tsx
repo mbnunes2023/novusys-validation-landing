@@ -298,58 +298,64 @@ export default function Page() {
         <Stepper />
 
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Identificação (opcional) */}
-          <section className="card">
-            <div className="mb-4">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white shadow-sm">
-                <span className="text-xs">Identificação (opcional)</span>
-              </div>
-              <p className="mt-2 text-sm text-slate-600">
-                Se desejar, informe seus dados para que possamos entrar em
-                contato sobre pilotos/entrevistas.
-              </p>
-            </div>
-            <div className="grid md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-sm text-slate-600">Nome</label>
-                <input
-                  className="ui-input mt-1"
-                  placeholder="Ex.: Dra. Maria Silva"
-                  value={form.doctor_name}
-                  onChange={(e) => onChange("doctor_name", e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-sm text-slate-600">CRM</label>
-                <input
-                  className="ui-input mt-1"
-                  placeholder="Ex.: CRM 12345"
-                  value={form.crm}
-                  onChange={(e) => onChange("crm", e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-sm text-slate-600">
-                  Contato (e-mail ou WhatsApp)
-                </label>
-                <input
-                  className="ui-input mt-1"
-                  placeholder="Ex.: (51) 9 9999-9999 ou nome@clinica.com"
-                  value={form.contact}
-                  onChange={(e) => onChange("contact", e.target.value)}
-                />
-              </div>
-            </div>
-            <label className="mt-4 flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                className="w-4 h-4"
-                checked={form.consent_contact}
-                onChange={(e) => onChange("consent_contact", e.target.checked)}
-              />
-              Autorizo contato para falar sobre pilotos/entrevistas (opcional).
-            </label>
-          </section>
+          {/* Identificação (opcional) — versão harmonizada */}
+<section className="card">
+  <div className="card-title">
+    <span className="title-dot" />
+    Identificação
+    <span className="badge-soft">opcional</span>
+  </div>
+  <p className="text-sm text-slate-500 mt-1">
+    Se desejar, informe seus dados para que possamos entrar em contato sobre pilotos/entrevistas.
+  </p>
+
+  <hr />
+
+  <div className="grid md:grid-cols-3 gap-4">
+    <div>
+      <label className="text-sm text-slate-600">Nome</label>
+      <input
+        className="ui-input mt-1"
+        placeholder="Ex.: Dra. Maria Silva"
+        value={form.doctor_name}
+        onChange={(e) => onChange("doctor_name", e.target.value)}
+      />
+    </div>
+
+    <div>
+      <label className="text-sm text-slate-600">CRM</label>
+      <input
+        className="ui-input mt-1"
+        placeholder="Ex.: CRM 12345"
+        value={form.crm}
+        onChange={(e) => onChange("crm", e.target.value)}
+      />
+    </div>
+
+    <div>
+      <label className="text-sm text-slate-600">Contato (e-mail ou WhatsApp)</label>
+      <input
+        className="ui-input mt-1"
+        placeholder="Ex.: (51) 9 9999-9999 ou nome@clinica.com"
+        value={form.contact}
+        onChange={(e) => onChange("contact", e.target.value)}
+      />
+    </div>
+  </div>
+
+  {/* Checkbox com fundo suave para não “sumir” no card */}
+  <div className="mt-4 rounded-xl border border-[var(--edge)] bg-slate-50/70 p-3">
+    <label className="flex items-start gap-2 text-sm text-slate-700">
+      <input
+        type="checkbox"
+        className="mt-1 w-4 h-4"
+        checked={form.consent_contact}
+        onChange={(e) => onChange("consent_contact", e.target.checked)}
+      />
+      <span>Autorizo contato para falar sobre pilotos/entrevistas (opcional).</span>
+    </label>
+  </div>
+</section>
 
           {/* Perfil (opcional) */}
           <section className="card">
