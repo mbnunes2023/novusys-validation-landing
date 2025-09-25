@@ -201,21 +201,28 @@ export default function Page() {
   };
 
   /** Barra de ações final com meta-info (confiança) */
-  const ActionsBar = () => (
-    <div className="actions">
-      <div className="meta">Respostas anônimas • Tempo total ~ 2–3 min</div>
-      <div className="spacer" />
-      <button
-        type="submit"
-        disabled={!canSubmit || submitting}
-        className={`btn ${canSubmit ? "btn-primary" : "btn-outline"}`}
-      >
-        {submitting ? "Enviando…" : "Enviar respostas"}
-      </button>
-      <a href="/privacy" className="btn btn-outline">
-        Política de privacidade
-      </a>
-    </div>
+  {/* Barra de ações final */}
+<div className="actions mt-6">
+  <div className="meta">
+    <span>Respostas anônimas</span>
+    <span className="dot" />
+    <span>Tempo total ~ 2–3 min</span>
+  </div>
+
+  <div className="spacer" />
+
+  <button
+    disabled={!canSubmit || submitting}
+    className="btn btn-primary"
+    type="submit"
+  >
+    {submitting ? "Enviando…" : "Enviar respostas"}
+  </button>
+
+  <a href="/privacy" className="btn btn-outline">
+    Política de privacidade
+  </a>
+</div>
   );
 
   // ======= Tela de agradecimento =======
