@@ -300,7 +300,7 @@ export default function Page() {
             >
               {submitting ? "Enviando…" : "Enviar respostas (2–3 min)"}
             </button>
-            <a href="#" className="px-5 py-3 rounded-2xl border">
+            <a href="/privacy" className="px-5 py-3 rounded-2xl border">
               Ver política de privacidade
             </a>
           </div>
