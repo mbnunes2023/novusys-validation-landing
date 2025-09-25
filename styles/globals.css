@@ -13,32 +13,45 @@ body {
   font-feature-settings: "rlig" 1, "calt" 1;
 }
 
-/* ======= Brand Bar (sem cartão atrás do logo) ======= */
+/* ======= Brand Bar fixa 360x360 ======= */
 .brand-bar {
-  position: sticky;
+  position: fixed;            /* fica sempre visível no topo */
   top: 0;
-  z-index: 50;
-  background: transparent;            /* sem fundo */
-  backdrop-filter: none;               /* remove blur */
-  border-bottom: none;                 /* sem linha */
+  left: 0;
+  right: 0;
+  height: 360px;              /* altura exata do topo */
+  background: #ffffff;        /* fundo limpo */
+  z-index: 100;               /* acima do conteúdo */
+  border: 0;
+  backdrop-filter: none;
 }
 
 .brand-bar__inner {
-  max-width: 72rem;
-  margin: 0 auto;
-  padding: 0.5rem 1.5rem;
+  height: 100%;
   display: grid;
-  place-items: center;
+  place-items: center;        /* centraliza o logo no quadrado */
+  margin: 0 auto;
 }
 
+/* Logo 360 x 360 */
 .brand-bar__logo {
-  width: 360px;                         /* ajuste como preferir */
+  width: 360px;
   height: 360px;
-  border-radius: 0;                    /* sem cantos arredondados */
-  box-shadow: none;                    /* sem sombra/glow */
   object-fit: contain;
-  background: transparent;             /* garante transparência */
+  border-radius: 0;
+  box-shadow: none;           /* sem “cartão” atrás */
+  background: transparent;
 }
 
-/* Espaço para o conteúdo não colar no topo */
-.page-wrap { padding-top: 0.25rem; }
+/* Empurra o conteúdo para baixo do header fixo */
+.page-wrap {
+  padding-top: 380px;         /* 360 + um respiro (20px) */
+}
+
+/* Responsividade opcional (em telas pequenas, reduz um pouco) */
+@media (max-width: 480px) {
+  .brand-bar { height: 220px; }
+  .brand-bar__logo { width: 220px; height: 220px; }
+  .page-wrap { padding-top: 240px; }
+}
+
