@@ -13,21 +13,30 @@ import {
 } from "recharts";
 
 type FormState = {
+  // Identificação (opcional)
   doctor_name: string;
   crm: string;
   contact: string;
   consent_contact: boolean;
+
+  // Perfil
   doctor_role: string;
   clinic_size: string;
+
+  // Perguntas
   q_noshow_relevance: string;
   q_noshow_has_system: string;
   q_noshow_financial_impact: string;
+
   q_glosa_is_problem: string;
   q_glosa_interest: string;
   q_glosa_who_suffers: string;
+
   q_rx_rework: string;
   q_rx_elderly_difficulty: string;
   q_rx_tool_value: string;
+
+  // Comentários + LGPD
   comments: string;
   consent: boolean;
 };
@@ -41,22 +50,28 @@ export default function Page() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const [form, setForm] = useState<FormState>({
     doctor_name: "",
     crm: "",
     contact: "",
     consent_contact: false,
+
     doctor_role: "",
     clinic_size: "",
+
     q_noshow_relevance: "",
     q_noshow_has_system: "",
     q_noshow_financial_impact: "",
+
     q_glosa_is_problem: "",
     q_glosa_interest: "",
     q_glosa_who_suffers: "",
+
     q_rx_rework: "",
     q_rx_elderly_difficulty: "",
     q_rx_tool_value: "",
+
     comments: "",
     consent: false,
   });
@@ -112,17 +127,22 @@ export default function Page() {
           crm: form.crm || null,
           contact: form.contact || null,
           consent_contact: !!form.consent_contact,
+
           doctor_role: form.doctor_role || null,
           clinic_size: form.clinic_size || null,
+
           q_noshow_relevance: form.q_noshow_relevance || null,
           q_noshow_has_system: form.q_noshow_has_system || null,
           q_noshow_financial_impact: form.q_noshow_financial_impact || null,
+
           q_glosa_is_problem: form.q_glosa_is_problem || null,
           q_glosa_interest: form.q_glosa_interest || null,
           q_glosa_who_suffers: form.q_glosa_who_suffers || null,
+
           q_rx_rework: form.q_rx_rework || null,
           q_rx_elderly_difficulty: form.q_rx_elderly_difficulty || null,
           q_rx_tool_value: form.q_rx_tool_value || null,
+
           comments: form.comments || null,
           consent: !!form.consent,
         },
@@ -136,7 +156,7 @@ export default function Page() {
     }
   };
 
-  /** Chips premium */
+  // Chips de seleção com as classes do CSS premium
   const OptionButtons = ({
     field,
     options,
@@ -144,13 +164,13 @@ export default function Page() {
     field: keyof FormState;
     options: string[];
   }) => (
-    <div className="chips">
+    <div className="chips mt-2">
       {options.map((opt) => {
         const active = (form[field] as any) === opt;
         return (
           <button
-            type="button"
             key={opt}
+            type="button"
             onClick={() => onChange(field, opt)}
             className={`chip ${active ? "chip--active" : ""}`}
           >
@@ -161,72 +181,10 @@ export default function Page() {
     </div>
   );
 
-  /** Título com “ponto gradiente” (hierarquia + identidade) */
-  const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <h2 className="card-title">
-      <span className="title-dot" />
-      {children}
-    </h2>
-  );
-
-  /** Stepper simples */
-  const Stepper = () => {
-    const steps = [
-      { id: "noshow", label: "Etapa 1 · Faltas" },
-      { id: "glosas", label: "Etapa 2 · Glosas" },
-      { id: "rx", label: "Etapa 3 · Receitas" },
-    ];
-    return (
-      <div className="card -mt-6 mb-6">
-        <div className="flex flex-wrap items-center gap-2 justify-between">
-          {steps.map((s, i) => (
-            <a
-              key={s.id}
-              href={`#${s.id}`}
-              className="btn btn-outline"
-              style={{ padding: ".55rem .9rem" }}
-            >
-              <span
-                className="inline-flex items-center justify-center w-6 h-6 mr-2 rounded-full text-white text-xs"
-                style={{ background: brand.gradient }}
-              >
-                {i + 1}
-              </span>
-              {s.label}
-            </a>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  {/* Barra de ações final */}
-<div className="actions mt-6">
-  <div className="meta">
-    <span>Respostas anônimas</span>
-    <span className="dot" />
-    <span>Tempo total ~ 2–3 min</span>
-  </div>
-
-  <div className="spacer" />
-
-  <button
-    disabled={!canSubmit || submitting}
-    className="btn btn-primary"
-    type="submit"
-  >
-    {submitting ? "Enviando…" : "Enviar respostas"}
-  </button>
-
-  <a href="/privacy" className="btn btn-outline">
-    Política de privacidade
-  </a>
-</div>
-
-  // ======= Tela de agradecimento =======
+  /* ========= TELA DE AGRADECIMENTO ========= */
   if (submitted) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[var(--page-bg)] to-slate-50">
+      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50">
         <div className="max-w-4xl mx-auto p-6">
           <header className="mb-8">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white shadow-sm">
@@ -237,10 +195,11 @@ export default function Page() {
             </h1>
           </header>
 
-          <section className="card mb-10">
-            <SectionTitle>Visão rápida das respostas (beta)</SectionTitle>
-            <hr />
-            <p className="mb-4">
+          <section className="mb-10 bg-white rounded-2xl p-6 border shadow-sm">
+            <h2 className="text-xl font-semibold mb-2">
+              Visão rápida das respostas (beta)
+            </h2>
+            <p className="text-slate-600 mb-4">
               Distribuição das respostas para a pergunta:{" "}
               <span className="font-medium">“No-show é relevante?”</span>
             </p>
@@ -261,7 +220,11 @@ export default function Page() {
             <a href="/" className="btn btn-outline">
               Enviar outra resposta
             </a>
-            <a href="/privacy" className="btn btn-primary">
+            <a
+              href="/privacy"
+              className="btn btn-primary"
+              style={{ backgroundImage: brand.gradient }}
+            >
               Política de privacidade
             </a>
           </div>
@@ -274,7 +237,7 @@ export default function Page() {
     );
   }
 
-  // ======= Formulário =======
+  /* ================= FORMULÁRIO ================= */
   return (
     <div className="min-h-screen">
       {/* HERO premium */}
@@ -284,14 +247,18 @@ export default function Page() {
       >
         <div className="max-w-4xl mx-auto px-6 py-10">
           <h1 className="text-3xl md:text-5xl font-extrabold leading-tight drop-shadow">
-            Validação de Dores em Clínicas e Consultórios Médicos
+            Validação de Dores em Clínicas Médicas
           </h1>
           <p className="mt-3 text-white/90 max-w-2xl">
             Pesquisa rápida (2–3 min) para entender o que realmente importa no
             seu dia a dia.
           </p>
           <div className="mt-5">
-            <a href="#form" className="btn btn-outline" style={{ background: "#fff" }}>
+            <a
+              href="#form"
+              className="btn btn-outline"
+              style={{ background: "white" }}
+            >
               Começar agora
             </a>
           </div>
@@ -299,74 +266,76 @@ export default function Page() {
       </section>
 
       <div id="form" className="max-w-4xl mx-auto p-6 -mt-6">
-        {/* STEP INDICATOR */}
-        <Stepper />
-
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Identificação (opcional) — versão harmonizada */}
-<section className="card">
-  <div className="card-title">
-    <span className="title-dot" />
-    Identificação
-    <span className="badge-soft">opcional</span>
-  </div>
-  <p className="text-sm text-slate-500 mt-1">
-    Se desejar, informe seus dados para que possamos entrar em contato sobre pilotos/entrevistas.
-  </p>
+          {/* Identificação (opcional) — harmonizada */}
+          <section className="card">
+            <div className="card-title">
+              <span className="title-dot" />
+              Identificação <span className="badge-soft">opcional</span>
+            </div>
+            <p className="text-sm text-slate-500 mt-1">
+              Se desejar, informe seus dados para que possamos entrar em contato
+              sobre pilotos/entrevistas.
+            </p>
 
-  <hr />
+            <hr />
 
-  <div className="grid md:grid-cols-3 gap-4">
-    <div>
-      <label className="text-sm text-slate-600">Nome</label>
-      <input
-        className="ui-input mt-1"
-        placeholder="Ex.: Dra. Maria Silva"
-        value={form.doctor_name}
-        onChange={(e) => onChange("doctor_name", e.target.value)}
-      />
-    </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-sm text-slate-600">Nome</label>
+                <input
+                  className="ui-input mt-1"
+                  placeholder="Ex.: Dra. Maria Silva"
+                  value={form.doctor_name}
+                  onChange={(e) => onChange("doctor_name", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm text-slate-600">CRM</label>
+                <input
+                  className="ui-input mt-1"
+                  placeholder="Ex.: CRM 12345"
+                  value={form.crm}
+                  onChange={(e) => onChange("crm", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-sm text-slate-600">
+                  Contato (e-mail ou WhatsApp)
+                </label>
+                <input
+                  className="ui-input mt-1"
+                  placeholder="Ex.: (51) 9 9999-9999 ou nome@clinica.com"
+                  value={form.contact}
+                  onChange={(e) => onChange("contact", e.target.value)}
+                />
+              </div>
+            </div>
 
-    <div>
-      <label className="text-sm text-slate-600">CRM</label>
-      <input
-        className="ui-input mt-1"
-        placeholder="Ex.: CRM 12345"
-        value={form.crm}
-        onChange={(e) => onChange("crm", e.target.value)}
-      />
-    </div>
-
-    <div>
-      <label className="text-sm text-slate-600">Contato (e-mail ou WhatsApp)</label>
-      <input
-        className="ui-input mt-1"
-        placeholder="Ex.: (51) 9 9999-9999 ou nome@clinica.com"
-        value={form.contact}
-        onChange={(e) => onChange("contact", e.target.value)}
-      />
-    </div>
-  </div>
-
-  {/* Checkbox com fundo suave para não “sumir” no card */}
-  <div className="mt-4 rounded-xl border border-[var(--edge)] bg-slate-50/70 p-3">
-    <label className="flex items-start gap-2 text-sm text-slate-700">
-      <input
-        type="checkbox"
-        className="mt-1 w-4 h-4"
-        checked={form.consent_contact}
-        onChange={(e) => onChange("consent_contact", e.target.checked)}
-      />
-      <span>Autorizo contato para falar sobre pilotos/entrevistas (opcional).</span>
-    </label>
-  </div>
-</section>
+            <div className="mt-4 rounded-xl border border-[var(--edge)] bg-slate-50/70 p-3">
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  className="mt-1 w-4 h-4"
+                  checked={form.consent_contact}
+                  onChange={(e) => onChange("consent_contact", e.target.checked)}
+                />
+                <span>
+                  Autorizo contato para falar sobre pilotos/entrevistas
+                  (opcional).
+                </span>
+              </label>
+            </div>
+          </section>
 
           {/* Perfil (opcional) */}
           <section className="card">
-            <SectionTitle>Perfil (opcional)</SectionTitle>
+            <div className="card-title">
+              <span className="title-dot" />
+              Perfil <span className="badge-soft">opcional</span>
+            </div>
             <hr />
-            <div className="mt-4 grid md:grid-cols-2 gap-4">
+            <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm text-slate-600">
                   Especialidade / Função
@@ -402,16 +371,18 @@ export default function Page() {
             </div>
           </section>
 
-          {/* No-show */}
-          <section id="noshow" className="card">
-            <SectionTitle>1) Faltas em Consultas (No-show)</SectionTitle>
-            <hr />
-            <p className="mt-1">
-              Pacientes faltam sem avisar, prejudicando agenda e faturamento.
-              Em muitos consultórios, os lembretes são manuais e
-              descentralizados.
+          {/* 1. No-show */}
+          <section className="card">
+            <div className="card-title">
+              <span className="title-dot" />
+              1) Faltas em Consultas (No-show)
+            </div>
+            <p className="text-slate-600 mt-1">
+              Pacientes faltam sem avisar, prejudicando agenda e faturamento. Em
+              muitos consultórios, os lembretes são manuais e descentralizados.
             </p>
-            <div className="mt-4 grid gap-4">
+            <hr />
+            <div className="grid gap-4">
               <div>
                 <label className="text-sm font-medium">
                   Essa dor é relevante na sua prática?
@@ -440,21 +411,21 @@ export default function Page() {
                 />
               </div>
             </div>
-            <p className="text-xs text-slate-500 mt-4">
-              Suas respostas nos ajudam a priorizar lembretes inteligentes para reduzir faltas.
-            </p>
           </section>
 
-          {/* Glosas */}
-          <section id="glosas" className="card">
-            <SectionTitle>2) Glosas de Convênios (Faturamento)</SectionTitle>
-            <hr />
-            <p className="mt-1">
+          {/* 2. Glosas */}
+          <section className="card">
+            <div className="card-title">
+              <span className="title-dot" />
+              2) Glosas de Convênios (Faturamento)
+            </div>
+            <p className="text-slate-600 mt-1">
               Erros em guias TISS/TUSS geram glosas e atrasam o recebimento.
               Conferência manual é trabalhosa, especialmente em clínicas
               menores.
             </p>
-            <div className="mt-4 grid gap-4">
+            <hr />
+            <div className="grid gap-4">
               <div>
                 <label className="text-sm font-medium">
                   Glosas são um problema recorrente?
@@ -483,20 +454,20 @@ export default function Page() {
                 />
               </div>
             </div>
-            <p className="text-xs text-slate-500 mt-4">
-              Queremos reduzir retrabalho com checagens automáticas antes do envio ao convênio.
-            </p>
           </section>
 
-          {/* Receitas Digitais */}
-          <section id="rx" className="card">
-            <SectionTitle>3) Receitas Digitais e Telemedicina</SectionTitle>
-            <hr />
-            <p className="mt-1">
+          {/* 3. Receitas Digitais */}
+          <section className="card">
+            <div className="card-title">
+              <span className="title-dot" />
+              3) Receitas Digitais e Telemedicina
+            </div>
+            <p className="text-slate-600 mt-1">
               Com a prescrição eletrônica, surgem dúvidas sobre validação e
               envio correto ao paciente/farmácia, gerando retrabalho.
             </p>
-            <div className="mt-4 grid gap-4">
+            <hr />
+            <div className="grid gap-4">
               <div>
                 <label className="text-sm font-medium">
                   Isso já gerou retrabalho em sua clínica?
@@ -525,17 +496,17 @@ export default function Page() {
                 />
               </div>
             </div>
-            <p className="text-xs text-slate-500 mt-4">
-              Ajudaremos pacientes e equipe com passos claros e validações automáticas.
-            </p>
           </section>
 
           {/* Comentários + Consentimentos */}
           <section className="card">
-            <SectionTitle>Comentários e consentimentos</SectionTitle>
+            <div className="card-title">
+              <span className="title-dot" />
+              Comentários e consentimentos
+            </div>
             <hr />
             <textarea
-              className="ui-textarea mt-3"
+              className="ui-textarea mt-2"
               rows={4}
               placeholder="Se pudesse resolver apenas um problema agora, qual seria?"
               value={form.comments}
@@ -559,15 +530,34 @@ export default function Page() {
                 </span>
               </label>
               <p className="text-xs text-slate-500">
-                Não solicitamos dados sensíveis de pacientes. Identificação é opcional.
+                Não solicitamos dados sensíveis de pacientes. Identificação é
+                opcional.
               </p>
             </div>
           </section>
 
           {error && <div className="text-red-600 text-sm">{error}</div>}
 
-          {/* CTA final mais forte e coeso */}
-          <ActionsBar />
+          {/* Barra de ações final */}
+          <div className="actions mt-6">
+            <div className="meta">
+              <span>Respostas anônimas</span>
+              <span className="dot" />
+              <span>Tempo total ~ 2–3 min</span>
+            </div>
+            <div className="spacer" />
+            <button
+              disabled={!canSubmit || submitting}
+              className="btn btn-primary"
+              type="submit"
+              style={{ backgroundImage: brand.gradient }}
+            >
+              {submitting ? "Enviando…" : "Enviar respostas"}
+            </button>
+            <a href="/privacy" className="btn btn-outline">
+              Política de privacidade
+            </a>
+          </div>
 
           <footer className="mt-10 text-xs text-slate-500 text-center">
             MVP • {new Date().getFullYear()}
@@ -577,3 +567,4 @@ export default function Page() {
     </div>
   );
 }
+
