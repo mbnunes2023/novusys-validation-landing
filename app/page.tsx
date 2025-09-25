@@ -35,7 +35,7 @@ type FormState = {
 export default function Page() {
   const brand = {
     color: "#1976d2",
-    gradient: "linear-gradient(135deg, #1976d2 0%, #6a11cb 50%, #2575fc 100%)",
+    gradient: "linear-gradient(135deg,#1976d2 0%,#6a11cb 50%,#2575fc 100%)",
   };
 
   const [submitting, setSubmitting] = useState(false);
@@ -136,7 +136,7 @@ export default function Page() {
     }
   };
 
-  /** Chips premium (usa classes definidas no globals.css) */
+  /** Chips premium */
   const OptionButtons = ({
     field,
     options,
@@ -161,7 +161,15 @@ export default function Page() {
     </div>
   );
 
-  /** Mini stepper simples (âncoras) */
+  /** Título com “ponto gradiente” (hierarquia + identidade) */
+  const SectionTitle = ({ children }: { children: React.ReactNode }) => (
+    <h2 className="card-title">
+      <span className="title-dot" />
+      {children}
+    </h2>
+  );
+
+  /** Stepper simples */
   const Stepper = () => {
     const steps = [
       { id: "noshow", label: "Etapa 1 · Faltas" },
@@ -192,10 +200,28 @@ export default function Page() {
     );
   };
 
+  /** Barra de ações final com meta-info (confiança) */
+  const ActionsBar = () => (
+    <div className="actions">
+      <div className="meta">Respostas anônimas • Tempo total ~ 2–3 min</div>
+      <div className="spacer" />
+      <button
+        type="submit"
+        disabled={!canSubmit || submitting}
+        className={`btn ${canSubmit ? "btn-primary" : "btn-outline"}`}
+      >
+        {submitting ? "Enviando…" : "Enviar respostas"}
+      </button>
+      <a href="/privacy" className="btn btn-outline">
+        Política de privacidade
+      </a>
+    </div>
+  );
+
   // ======= Tela de agradecimento =======
   if (submitted) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#f6f7fb] to-slate-50">
+      <div className="min-h-screen bg-gradient-to-b from-[var(--page-bg)] to-slate-50">
         <div className="max-w-4xl mx-auto p-6">
           <header className="mb-8">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white shadow-sm">
@@ -207,14 +233,9 @@ export default function Page() {
           </header>
 
           <section className="card mb-10">
-            <h2
-              className="card-title text-transparent bg-clip-text"
-              style={{ backgroundImage: brand.gradient }}
-            >
-              Visão rápida das respostas (beta)
-            </h2>
+            <SectionTitle>Visão rápida das respostas (beta)</SectionTitle>
             <hr />
-            <p className="text-slate-600 mb-4">
+            <p className="mb-4">
               Distribuição das respostas para a pergunta:{" "}
               <span className="font-medium">“No-show é relevante?”</span>
             </p>
@@ -225,11 +246,7 @@ export default function Page() {
                   <XAxis dataKey="name" />
                   <YAxis allowDecimals={false} />
                   <Tooltip />
-                  <Bar
-                    dataKey="value"
-                    fill={brand.color}
-                    radius={[8, 8, 0, 0]}
-                  />
+                  <Bar dataKey="value" fill={brand.color} radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -287,7 +304,7 @@ export default function Page() {
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white shadow-sm">
                 <span className="text-xs">Identificação (opcional)</span>
               </div>
-              <p className="text-slate-600 mt-2 text-sm">
+              <p className="mt-2 text-sm text-slate-600">
                 Se desejar, informe seus dados para que possamos entrar em
                 contato sobre pilotos/entrevistas.
               </p>
@@ -336,12 +353,7 @@ export default function Page() {
 
           {/* Perfil (opcional) */}
           <section className="card">
-            <h2
-              className="card-title text-transparent bg-clip-text"
-              style={{ backgroundImage: brand.gradient }}
-            >
-              Perfil (opcional)
-            </h2>
+            <SectionTitle>Perfil (opcional)</SectionTitle>
             <hr />
             <div className="mt-4 grid md:grid-cols-2 gap-4">
               <div>
@@ -381,14 +393,9 @@ export default function Page() {
 
           {/* No-show */}
           <section id="noshow" className="card">
-            <h2
-              className="card-title text-transparent bg-clip-text"
-              style={{ backgroundImage: brand.gradient }}
-            >
-              1) Faltas em Consultas (No-show)
-            </h2>
+            <SectionTitle>1) Faltas em Consultas (No-show)</SectionTitle>
             <hr />
-            <p className="text-slate-600 mt-1">
+            <p className="mt-1">
               Pacientes faltam sem avisar, prejudicando agenda e faturamento.
               Em muitos consultórios, os lembretes são manuais e
               descentralizados.
@@ -429,14 +436,9 @@ export default function Page() {
 
           {/* Glosas */}
           <section id="glosas" className="card">
-            <h2
-              className="card-title text-transparent bg-clip-text"
-              style={{ backgroundImage: brand.gradient }}
-            >
-              2) Glosas de Convênios (Faturamento)
-            </h2>
+            <SectionTitle>2) Glosas de Convênios (Faturamento)</SectionTitle>
             <hr />
-            <p className="text-slate-600 mt-1">
+            <p className="mt-1">
               Erros em guias TISS/TUSS geram glosas e atrasam o recebimento.
               Conferência manual é trabalhosa, especialmente em clínicas
               menores.
@@ -477,14 +479,9 @@ export default function Page() {
 
           {/* Receitas Digitais */}
           <section id="rx" className="card">
-            <h2
-              className="card-title text-transparent bg-clip-text"
-              style={{ backgroundImage: brand.gradient }}
-            >
-              3) Receitas Digitais e Telemedicina
-            </h2>
+            <SectionTitle>3) Receitas Digitais e Telemedicina</SectionTitle>
             <hr />
-            <p className="text-slate-600 mt-1">
+            <p className="mt-1">
               Com a prescrição eletrônica, surgem dúvidas sobre validação e
               envio correto ao paciente/farmácia, gerando retrabalho.
             </p>
@@ -524,12 +521,7 @@ export default function Page() {
 
           {/* Comentários + Consentimentos */}
           <section className="card">
-            <h2
-              className="card-title text-transparent bg-clip-text"
-              style={{ backgroundImage: brand.gradient }}
-            >
-              Comentários e consentimentos
-            </h2>
+            <SectionTitle>Comentários e consentimentos</SectionTitle>
             <hr />
             <textarea
               className="ui-textarea mt-3"
@@ -556,25 +548,15 @@ export default function Page() {
                 </span>
               </label>
               <p className="text-xs text-slate-500">
-                Não solicitamos dados sensíveis de pacientes. Identificação é
-                opcional.
+                Não solicitamos dados sensíveis de pacientes. Identificação é opcional.
               </p>
             </div>
           </section>
 
           {error && <div className="text-red-600 text-sm">{error}</div>}
 
-          <div className="flex flex-wrap gap-3">
-            <button
-              disabled={!canSubmit || submitting}
-              className={`btn ${canSubmit ? "btn-primary" : "btn-outline"}`}
-            >
-              {submitting ? "Enviando…" : "Enviar respostas (2–3 min)"}
-            </button>
-            <a href="/privacy" className="btn btn-outline">
-              Ver política de privacidade
-            </a>
-          </div>
+          {/* CTA final mais forte e coeso */}
+          <ActionsBar />
 
           <footer className="mt-10 text-xs text-slate-500 text-center">
             MVP • {new Date().getFullYear()}
