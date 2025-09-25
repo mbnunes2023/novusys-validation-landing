@@ -9,9 +9,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-br">
-          </div>
+      <body>
+        <header className="brand-bar">
+          <div className="brand-bar__inner" />
         </header>
-
         <div className="page-wrap">{children}</div>
       </body>
     </html>
