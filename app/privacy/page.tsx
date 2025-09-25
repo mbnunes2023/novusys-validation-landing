@@ -1,18 +1,34 @@
+import Link from "next/link";
+
 export const metadata = {
   title: "Política de Privacidade — NovuSys",
   description: "Política de Privacidade da landing de validação (LGPD)",
-  robots: { index: false }, // não precisa ranquear no Google
+  robots: { index: false },
 };
 
 export default function PrivacyPage() {
+  const year = new Date().getFullYear();
+
   return (
     <main className="min-h-screen bg-white text-slate-800">
+      {/* Topbar com botão Voltar */}
+      <div className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b">
+        <div className="max-w-3xl mx-auto px-6 py-3 flex items-center justify-between">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium hover:bg-slate-50 transition"
+            aria-label="Voltar para a página inicial"
+          >
+            <span aria-hidden>←</span> Voltar
+          </Link>
+          <div className="text-xs text-slate-500">NovuSys</div>
+        </div>
+      </div>
+
       <div className="max-w-3xl mx-auto p-6">
         <header className="mb-8">
           <h1 className="text-3xl font-bold">Política de Privacidade</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Última atualização: {new Date().getFullYear()}
-          </p>
+          <p className="text-sm text-slate-500 mt-1">Última atualização: {year}</p>
         </header>
 
         <section className="prose prose-slate max-w-none">
@@ -33,7 +49,8 @@ export default function PrivacyPage() {
               nome, CRM e contato (e-mail/WhatsApp).
             </li>
             <li>
-              <strong>Consentimentos</strong>: uso anônimo das respostas e, se marcado, consentimento para contato.
+              <strong>Consentimentos</strong>: uso anônimo das respostas e, se marcado,
+              consentimento para contato.
             </li>
           </ul>
 
@@ -87,9 +104,7 @@ export default function PrivacyPage() {
           </p>
 
           <h2>8. Crianças e adolescentes</h2>
-          <p>
-            A landing não se destina a menores. Não coletamos dados de crianças/adolescentes.
-          </p>
+          <p>A landing não se destina a menores. Não coletamos dados de crianças/adolescentes.</p>
 
           <h2>9. Alterações desta política</h2>
           <p>
@@ -103,9 +118,10 @@ export default function PrivacyPage() {
         </section>
 
         <footer className="mt-10 text-xs text-slate-500">
-          NovuSys — Transformamos códigos em resultados • {new Date().getFullYear()}
+          NovuSys — Transformamos códigos em resultados • {year}
         </footer>
       </div>
     </main>
   );
 }
+
