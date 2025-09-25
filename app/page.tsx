@@ -13,17 +13,14 @@ import {
 } from "recharts";
 
 type FormState = {
-  // Identificação (opcional)
   doctor_name: string;
   crm: string;
   contact: string;
   consent_contact: boolean;
 
-  // Perfil
   doctor_role: string;
   clinic_size: string;
 
-  // Perguntas
   q_noshow_relevance: string;
   q_noshow_has_system: string;
   q_noshow_financial_impact: string;
@@ -36,7 +33,6 @@ type FormState = {
   q_rx_elderly_difficulty: string;
   q_rx_tool_value: string;
 
-  // Comentários + LGPD
   comments: string;
   consent: boolean;
 };
@@ -156,7 +152,6 @@ export default function Page() {
     }
   };
 
-  // Chips de seleção com as classes do CSS premium
   const OptionButtons = ({
     field,
     options,
@@ -267,7 +262,7 @@ export default function Page() {
 
       <div id="form" className="max-w-4xl mx-auto p-6 -mt-6">
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Identificação (opcional) — harmonizada */}
+          {/* Identificação (opcional) */}
           <section className="card">
             <div className="card-title">
               <span className="title-dot" />
@@ -277,9 +272,7 @@ export default function Page() {
               Se desejar, informe seus dados para que possamos entrar em contato
               sobre pilotos/entrevistas.
             </p>
-
             <hr />
-
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <label className="text-sm text-slate-600">Nome</label>
@@ -311,7 +304,6 @@ export default function Page() {
                 />
               </div>
             </div>
-
             <div className="mt-4 rounded-xl border border-[var(--edge)] bg-slate-50/70 p-3">
               <label className="flex items-start gap-2 text-sm text-slate-700">
                 <input
@@ -538,14 +530,14 @@ export default function Page() {
 
           {error && <div className="text-red-600 text-sm">{error}</div>}
 
-          {/* Barra de ações final */}
-          <div className="actions mt-6">
-            <div className="meta">
-              <span>Respostas anônimas</span>
-              <span className="dot" />
-              <span>Tempo total ~ 2–3 min</span>
-            </div>
-            <div className="spacer" />
+          {/* ===== Barra de ações: apenas os botões, centralizados ===== */}
+          <div
+            className="actions mt-6"
+            style={{
+              justifyContent: "center",
+              gap: 12,
+            }}
+          >
             <button
               disabled={!canSubmit || submitting}
               className="btn btn-primary"
@@ -554,7 +546,15 @@ export default function Page() {
             >
               {submitting ? "Enviando…" : "Enviar respostas"}
             </button>
-            <a href="/privacy" className="btn btn-outline">
+
+            <a
+              href="/privacy"
+              className="btn btn-outline"
+              style={{
+                background: "#f4f6fb", // leve cinza-azulado para não ficar branco chapado
+                borderColor: "var(--edge)",
+              }}
+            >
               Política de privacidade
             </a>
           </div>
