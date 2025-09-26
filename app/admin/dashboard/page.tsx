@@ -1,554 +1,933 @@
-// app/admin/dashboard/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
-import ExportPDFButton from "../components/ExportPDFButton";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-// Recharts
-import {
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  LabelList,
-} from "recharts";
+import { useState, useCallback } from "react";
+import type React from "react";
+import jsPDF, { jsPDFOptions } from "jspdf";
+import autoTable from "jspdf-autotable";
 
-/* ============================ Tipos ============================ */
+/* ===================== Tipos ===================== */
 
-type Answer = {
-  id: string;
-  created_at: string; // ISO
-  doctor_name: string | null;
-  crm: string | null;
-  contact: string | null;
-  consent_contact: boolean | null;
-  consent: boolean | null;
-
-  clinic_size: "Pequeno" | "Médio" | "Grande" | null;
-  doctor_role: "Geriatra" | "Dermatologista" | "Ortopedista" | "Outra" | null;
-
-  q_noshow_relevance: string | null;
-  q_noshow_has_system: string | null;
-  q_noshow_financial_impact: string | null;
-
-  q_glosa_is_problem: string | null;
-  q_glosa_interest: string | null;
-  q_glosa_who_suffers: string | null;
-
-  q_rx_rework: string | null;
-  q_rx_elderly_difficulty: string | null;
-  q_rx_tool_value: string | null;
-
-  comments: string | null;
+type KPI = {
+  total: number;
+  noshowYesPct: number;
+  glosaRecorrentePct: number;
+  rxReworkPct: number;
 };
 
-/* ============================ Utils ============================ */
+type Answer = Record<string, any>;
 
-const BRAND = "#1976d2";
+type Props = {
+  kpi: KPI;
+  summaryRows: Array<Record<string, number | string>>; // compatibilidade
+  answers: Answer[];
+  chartRefs?: {
+    noshowRef: React.RefObject<HTMLDivElement>;
+    glosaRef: React.RefObject<HTMLDivElement>;
+    rxRef: React.RefObject<HTMLDivElement>;
+  };
+};
 
-function trunc(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+/* ===================== Branding ===================== */
+
+const BRAND_BLUE = "#1976d2";
+const ACCENT = "#2575fc";
+const INK = "#0f172a";
+const INK_SOFT = "#64748b";
+const CARD_EDGE = "#e9edf7";
+
+/* ===================== Utils ===================== */
+
+function formatNow(): string {
+  const d = new Date();
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(d);
 }
 
-function isoToDate(d: string) {
-  // normaliza para data (sem hora) em local time
-  const x = new Date(d);
-  return new Date(x.getFullYear(), x.getMonth(), x.getDate());
+function usableHeight(startY: number, pageH: number, bottomPadding = 40) {
+  return Math.max(0, pageH - bottomPadding - startY);
+}
+function centeredStartY(startY: number, pageH: number, blockH: number) {
+  const avail = usableHeight(startY, pageH);
+  const offset = Math.max(0, (avail - blockH) / 2);
+  return startY + offset;
 }
 
-function parseBRDate(s: string): Date | null {
-  // dd/mm/aaaa
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s?.trim() ?? "");
-  if (!m) return null;
-  const dd = Number(m[1]);
-  const mm = Number(m[2]) - 1;
-  const yy = Number(m[3]);
-  const d = new Date(yy, mm, dd);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-type Dist = Array<{ label: string; count: number }>;
-
-function distribution(
-  rows: Answer[],
-  key: keyof Answer,
-  options: string[]
-): Dist {
-  const map = new Map<string, number>();
-  options.forEach((o) => map.set(o, 0));
-  for (const a of rows) {
-    const v = (a[key] as string) || "";
-    if (map.has(v)) map.set(v, (map.get(v) || 0) + 1);
+// /public/logo.png -> DataURL
+async function fetchAsDataURL(path: string): Promise<string | null> {
+  try {
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const r = new FileReader();
+      r.onloadend = () => resolve(r.result as string);
+      r.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
   }
-  return options.map((o) => ({ label: o, count: map.get(o) || 0 }));
 }
 
-/* ========== Aux: renderizar somente após montar no cliente (evita crash do Recharts em SSR) ========== */
-function NoSSR({ children, height = 180 }: { children: React.ReactNode; height?: number }) {
-  const [ready, setReady] = useState(false);
-  useEffect(() => setReady(true), []);
-  if (!ready) return <div style={{ height }} />;
-  return <>{children}</>;
+/* ===================== Cabeçalho/Rodapé ===================== */
+
+const TOP_GAP = 24; // respiro após header
+
+function drawHeader(
+  doc: jsPDF,
+  pageW: number,
+  marginX: number,
+  title: string,
+  logoDataUrl?: string | null
+) {
+  // faixa superior
+  doc.setFillColor(BRAND_BLUE);
+  doc.rect(0, 0, pageW, 6, "F");
+
+  // card do header
+  const headerH = 72;
+  const cardX = marginX;
+  const cardY = 14;
+  const cardW = pageW - marginX * 2;
+
+  doc.setFillColor("#ffffff");
+  doc.setDrawColor(CARD_EDGE);
+  doc.setLineWidth(1);
+  doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
+
+  // centralização vertical
+  const centerY = cardY + headerH / 2;
+
+  // bloco texto (esquerda)
+  const leftPad = 18;
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(INK);
+  doc.setFontSize(18);
+  const titleH = 18;
+  const dateH = 10;
+  const lineGap = 6;
+  const textBlockH = titleH + lineGap + dateH;
+  const titleY = centerY - textBlockH / 2 + titleH * 0.75;
+
+  doc.text(title, cardX + leftPad, titleY);
+
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(INK_SOFT);
+  doc.setFontSize(10);
+  doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, titleY + lineGap + 10);
+
+  // logo (direita), centralizado verticalmente
+  if (logoDataUrl) {
+    const targetW = 170;
+    const targetH = 50;
+    const padRight = 18;
+    const imgX = cardX + cardW - padRight - targetW;
+    const imgY = centerY - targetH / 2;
+    try {
+      doc.addImage(logoDataUrl, "PNG", imgX, imgY, targetW, targetH);
+    } catch {}
+  }
+
+  return cardY + headerH + 12 + TOP_GAP;
 }
 
-/* ============================ Componentes base ============================ */
-
-// KPI Donut
-function KpiDonut({ title, valuePct }: { title: string; valuePct: number }) {
-  const v = Math.max(0, Math.min(100, Math.round(valuePct)));
-  const data = [
-    { name: title, value: v },
-    { name: "Restante", value: 100 - v },
-  ];
-  return (
-    <div className="card">
-      <div className="text-sm font-semibold text-slate-700 mb-1">{title}</div>
-      <div className="relative h-[120px] w-full">
-        <NoSSR height={120}>
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie
-                data={data}
-                innerRadius={42}
-                outerRadius={56}
-                dataKey="value"
-                startAngle={90}
-                endAngle={-270}
-                stroke="none"
-              >
-                <Cell fill={BRAND} />
-                <Cell fill="#e8f0fe" />
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
-        </NoSSR>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-3xl font-extrabold text-[var(--brand-1)]">{v}%</div>
-        </div>
-      </div>
-      <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: BRAND }} />
-          {title}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#e8f0fe" }} />
-          Restante
-        </span>
-      </div>
-    </div>
-  );
+function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
+  const left = "Relatório gerado automaticamente";
+  const right = `p. ${doc.getCurrentPageInfo().pageNumber}`;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(INK_SOFT);
+  doc.text(left, marginX, pageH - 14);
+  const rightW = doc.getTextWidth(right);
+  doc.text(right, pageW - marginX - rightW, pageH - 14);
 }
 
-// Barras horizontais com eixos/ticks, rótulos e tooltip
-function DistBar({ title, data }: { title: string; data: Dist }) {
-  const total = data.reduce((s, d) => s + d.count, 0);
-  const chartData = data.map((d) => ({
-    name: d.label,
-    value: d.count,
-    pct: total ? Math.round((d.count / total) * 100) : 0,
-  }));
-  const max = Math.max(1, ...chartData.map((d) => d.value));
-  const tickCount = Math.min(5, Math.max(3, max));
-
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="flex items-baseline justify-between mb-2">
-        <div className="text-sm font-semibold text-slate-700">{title}</div>
-        <div className="text-xs text-slate-500">N={total}</div>
-      </div>
-      <div className="h-[180px]">
-        <NoSSR>
-          <ResponsiveContainer>
-            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 12, top: 8, bottom: 8 }}>
-              <CartesianGrid stroke="#eef2f9" horizontal={false} />
-              <XAxis
-                type="number"
-                domain={[0, max]}
-                tickCount={tickCount}
-                tick={{ fontSize: 11, fill: "#64748b" }}
-                stroke="#cbd5e1"
-              />
-              <YAxis
-                type="category"
-                dataKey="name"
-                width={140}
-                tick={{ fontSize: 12, fill: "#334155" }}
-                stroke="#cbd5e1"
-              />
-              <Tooltip
-                cursor={{ fill: "#f8fafc" }}
-                formatter={(value: any, _n, e: any) => [`${value} (${e?.payload?.pct ?? 0}%)`, "Respostas"]}
-                labelFormatter={(label) => label}
-              />
-              <Bar dataKey="value" radius={[6, 6, 6, 6]} fill={BRAND}>
-                <LabelList
-                  dataKey="value"
-                  position="right"
-                  formatter={(v: number, _n: any, e: any) => `${v} (${e.payload.pct}%)`}
-                  style={{ fontSize: 11, fill: "#334155" }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </NoSSR>
-      </div>
-    </div>
-  );
+function newPage(
+  doc: jsPDF,
+  opts: { title: string; marginX: number; pageW: number; pageH: number; logoDataUrl?: string | null }
+) {
+  doc.addPage();
+  const startY = drawHeader(doc, opts.pageW, opts.marginX, opts.title, opts.logoDataUrl);
+  drawFooter(doc, opts.pageW, opts.pageH, opts.marginX);
+  return startY;
 }
 
-/* ============================ Página ============================ */
+/* ===================== KPI Cards ===================== */
 
-export default function AdminDashboard() {
-  const router = useRouter();
-  const [answers, setAnswers] = useState<Answer[]>([]);
-  const [loading, setLoading] = useState(true);
+function drawKpiCard(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  title: string,
+  value: string,
+  accent = BRAND_BLUE
+) {
+  doc.setDrawColor(CARD_EDGE);
+  doc.setFillColor("#ffffff");
+  doc.roundedRect(x, y, w, h, 12, 12, "FD");
+  doc.setFillColor(accent);
+  doc.roundedRect(x, y, w, 6, 12, 12, "F");
 
-  // filtros
-  const [range, setRange] = useState<"7d" | "30d" | "90d" | "all">("all");
-  const [customFrom, setCustomFrom] = useState<string>("");
-  const [customTo, setCustomTo] = useState<string>("");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(INK);
+  doc.text(title, x + 16, y + 26);
 
-  const [sizes, setSizes] = useState<Set<Answer["clinic_size"]>>(new Set());
-  const [roles, setRoles] = useState<Set<Answer["doctor_role"]>>(new Set());
-  const [respondent, setRespondent] = useState<"Todos" | "Com contato" | "Sem contato">("Todos");
+  doc.setTextColor(accent);
+  doc.setFontSize(30);
+  doc.text(value, x + 16, y + 58);
+}
 
-  // sessão
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) router.replace("/admin");
-    });
-  }, [router]);
+/* ===================== Micro-charts ===================== */
 
-  // carregar dados
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("validation_responses")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!error && data) setAnswers(data as Answer[]);
-      setLoading(false);
-    })();
-  }, []);
+type DistItem = { label: string; count: number; pct: string };
 
-  // aplicar filtros
-  const filtered = useMemo(() => {
-    if (!answers.length) return [];
+const ROW_H = 20;
+const ROW_GAP = 6;
 
-    let from: Date | null = null;
-    let to: Date | null = null;
+function measureBarBlock(lines: number) {
+  return 8 + lines * (ROW_H + ROW_GAP);
+}
 
-    if (range !== "all") {
-      const now = trunc(new Date());
-      to = now;
-      const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
-      from = new Date(now);
-      from.setDate(from.getDate() - (days - 1));
+function dist(
+  answers: Answer[],
+  field: keyof Answer,
+  order: string[]
+): { items: DistItem[]; answered: number; unknownCount: number } {
+  const counts: Record<string, number> = {};
+  order.forEach((k) => (counts[k] = 0));
+  let unknown = 0;
+
+  answers.forEach((a) => {
+    const v = (a[field] as string) ?? "";
+    if (!v || !order.includes(v)) unknown += 1;
+    else counts[v] += 1;
+  });
+
+  const answered = Object.values(counts).reduce((s, n) => s + n, 0);
+  const toPct = (n: number) => (answered ? `${Math.round((n / answered) * 100)}%` : "0%");
+
+  const items = order.map((k) => ({ label: k, count: counts[k], pct: toPct(counts[k]) }));
+  return { items, answered, unknownCount: unknown };
+}
+
+/* ======== Compacto (3×3 da página 2) ======== */
+const CROW_H = 14;
+const CROW_GAP = 4;
+
+function measureBarBlockCompact(lines: number) {
+  return 7 + lines * (CROW_H + CROW_GAP) + 2;
+}
+
+function drawBarBlockCompact(
+  doc: jsPDF,
+  title: string,
+  items: { label: string; count: number; pct: string }[],
+  x: number,
+  y: number,
+  width: number
+) {
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(INK);
+  doc.setFontSize(12);
+  doc.text(title, x, y);
+  y += 7;
+
+  const labelW = width * 0.44;
+  const barW = width * 0.56;
+  const nonEmpty = items.filter((i) => i.count > 0);
+  const maxPct = Math.max(...nonEmpty.map((i) => parseInt(i.pct) || 0), 1);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(INK_SOFT);
+
+  nonEmpty.forEach((it, idx) => {
+    const rowY = y + idx * (CROW_H + CROW_GAP);
+    const label = `${it.label} — ${it.count} (${it.pct})`;
+    doc.text(label, x, rowY + 10, { maxWidth: labelW - 4 });
+
+    doc.setDrawColor(CARD_EDGE);
+    doc.setFillColor("#fff");
+    doc.roundedRect(x + labelW, rowY, barW, CROW_H, 5, 5, "FD");
+
+    const pct = parseInt(it.pct) || 0;
+    const w = (pct / maxPct) * (barW - 8);
+    doc.setFillColor(BRAND_BLUE);
+    doc.roundedRect(x + labelW + 2, rowY + 2, Math.max(w, 2), CROW_H - 4, 4, 4, "F");
+  });
+
+  return y + nonEmpty.length * (CROW_H + CROW_GAP);
+}
+
+/* ===================== Tabelas/Mapas ===================== */
+
+const SENSITIVE_KEYS = new Set([
+  "id",
+  "created_at",
+  "doctor_name",
+  "crm",
+  "contact",
+  "consent",
+  "consent_contact",
+  "doctor_role",
+  "clinic_size",
+]);
+
+const HEADER_MAP: Record<string, string> = {
+  q_noshow_relevance: "No-show relevante?",
+  q_noshow_has_system: "Sistema p/ no-show?",
+  q_noshow_financial_impact: "Impacto financeiro",
+  q_glosa_is_problem: "Glosas recorrentes?",
+  q_glosa_interest: "Checagem antes do envio",
+  q_glosa_who_suffers: "Quem sofre mais",
+  q_rx_rework: "Receitas geram retrabalho?",
+  q_rx_elderly_difficulty: "Pacientes têm dificuldade?",
+  q_rx_tool_value: "Valor em ferramenta de apoio",
+  comments: "Observações",
+};
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/* ===================== Consolidado por tema ===================== */
+
+type SectionKey = "noshow" | "glosas" | "receitas";
+const SECTIONS: Record<
+  SectionKey,
+  { title: string; questions: Array<{ key: keyof Answer; label: string; options: string[] }> }
+> = {
+  noshow: {
+    title: "No-show (Faltas em consultas)",
+    questions: [
+      { key: "q_noshow_relevance", label: "Relevância", options: ["Sim", "Não", "Parcialmente"] },
+      { key: "q_noshow_has_system", label: "Possui sistema que resolve", options: ["Sim", "Não"] },
+      { key: "q_noshow_financial_impact", label: "Impacto financeiro mensal", options: ["Baixo impacto", "Médio impacto", "Alto impacto"] },
+    ],
+  },
+  glosas: {
+    title: "Glosas de convênios (Faturamento)",
+    questions: [
+      { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não", "Às vezes"] },
+      { key: "q_glosa_interest", label: "Interesse em checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
+      { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
+    ],
+  },
+  receitas: {
+    title: "Receitas digitais e telemedicina",
+    questions: [
+      { key: "q_rx_rework", label: "Receitas geram retrabalho", options: ["Sim", "Não", "Raramente"] },
+      { key: "q_rx_elderly_difficulty", label: "Pacientes têm dificuldade", options: ["Sim", "Não", "Em parte"] },
+      { key: "q_rx_tool_value", label: "Valor em ferramenta de apoio", options: ["Sim", "Não", "Talvez"] },
+    ],
+  },
+};
+
+function renderSectionTable(
+  doc: jsPDF,
+  section: (typeof SECTIONS)[SectionKey],
+  answers: Answer[],
+  pageW: number,
+  pageH: number,
+  marginX: number,
+  title: string,
+  logoDataUrl?: string | null
+) {
+  type Row = { pergunta: string; opcao: string; qtde: number; pct: string };
+  const rows: Row[] = [];
+  let answeredAll = 0;
+  let notAnsweredAll = 0;
+
+  section.questions.forEach((q) => {
+    const { items, answered, unknownCount } = dist(answers, q.key, q.options);
+    answeredAll += answered;
+    notAnsweredAll += unknownCount;
+
+    items
+      .filter((it) => it.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .forEach((it) => {
+        rows.push({ pergunta: q.label, opcao: it.label, qtde: it.count, pct: it.pct });
+      });
+  });
+
+  const HEADER_GAP = 28;
+  const topY = 14 + 72 + 12 + HEADER_GAP + TOP_GAP;
+
+  autoTable(doc as any, {
+    startY: topY,
+    styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+    headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+    body: rows.length ? rows : [{ pergunta: "—", opcao: "—", qtde: 0, pct: "0%" }],
+    columns: [
+      { header: section.title, dataKey: "pergunta" },
+      { header: "Opção", dataKey: "opcao" },
+      { header: "Qtde", dataKey: "qtde" },
+      { header: "% (entre respondentes)", dataKey: "pct" },
+    ],
+    columnStyles: {
+      pergunta: { cellWidth: 260, overflow: "linebreak" },
+      opcao: { cellWidth: 220, overflow: "linebreak" },
+      qtde: { cellWidth: 60, halign: "right" },
+      pct: { cellWidth: 160, halign: "right" },
+    },
+    tableWidth: pageW - marginX * 2,
+    margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
+    theme: "grid",
+    rowPageBreak: "auto",
+    didDrawPage: () => {
+      const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+      const sampleTxt = `Respondido: ${answeredAll} • Não respondido: ${notAnsweredAll}`;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK_SOFT);
+      doc.setFontSize(11);
+      doc.text(sampleTxt, marginX, sY + HEADER_GAP - 12);
+      drawFooter(doc, pageW, pageH, marginX);
+    },
+  });
+
+  return (doc as any).lastAutoTable.finalY;
+}
+
+/* ===================== Respostas detalhadas — Premium ===================== */
+
+function drawPill(doc: jsPDF, x: number, y: number, text: string) {
+  const padX = 6;
+  const padY = 4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  const w = doc.getTextWidth(text) + padX * 2;
+  const h = 18;
+  doc.setDrawColor(CARD_EDGE);
+  doc.setFillColor("#f6f9ff");
+  doc.roundedRect(x, y, w, h, 9, 9, "FD");
+  doc.setTextColor(BRAND_BLUE);
+  doc.text(text, x + padX, y + 12);
+  return { width: w, height: h };
+}
+
+function safeText(v: any): string {
+  if (v == null || v === "") return "Não informado";
+  if (typeof v === "boolean") return v ? "Sim" : "Não";
+  return String(v);
+}
+
+/** Cards 2-col para ≤ 20 respostas */
+function renderDetailedAsCards(
+  doc: jsPDF,
+  answers: Answer[],
+  pageW: number,
+  pageH: number,
+  marginX: number,
+  title: string,
+  logoDataUrl?: string | null
+) {
+  const gap = 18;
+  const colW = (pageW - marginX * 2 - gap) / 2;
+  let startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(INK);
+  doc.setFontSize(14);
+  doc.text("Respostas detalhadas (cartões)", marginX, startY + 2);
+  let y = startY + 14;
+
+  const lineH = 16;
+
+  answers.forEach((a, idx) => {
+    const col = idx % 2;
+    const x = marginX + col * (colW + gap);
+
+    const commentRaw = (a.comments || "").toString().trim();
+    const comment = commentRaw ? commentRaw : "";
+    const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
+    const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
+
+    const baseH =
+      24 + 8 + 3 * 28 + (comment ? 18 : 0) + commentH + 18;
+    let cardH = baseH;
+
+    if (y + cardH > pageH - 60) {
+      y = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 14;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Respostas detalhadas (cartões)", marginX, y - 12);
     }
 
-    // intervalo custom (só se ambas válidas)
-    const f = customFrom ? parseBRDate(customFrom) : null;
-    const t = customTo ? parseBRDate(customTo) : null;
-    if (f && t) {
-      from = trunc(f);
-      to = trunc(t);
-    }
+    doc.setDrawColor(CARD_EDGE);
+    doc.setFillColor("#ffffff");
+    doc.roundedRect(x, y, colW, cardH, 12, 12, "FD");
 
-    const sizeActive = sizes.size > 0;
-    const roleActive = roles.size > 0;
+    const code = `R-${String(idx + 1).padStart(2, "0")}`;
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(INK);
+    doc.setFontSize(12);
+    doc.text(`Resposta ${code}`, x + 14, y + 22);
 
-    return answers.filter((a) => {
-      if (from && to) {
-        const d = isoToDate(a.created_at);
-        if (d < from || d > to) return false;
+    const consent = !!(a.consent_contact || a.consent);
+    if (consent) {
+      const idLine = [safeText(a.doctor_name), safeText(a.crm), safeText(a.contact)]
+        .filter((t) => t && t !== "Não informado")
+        .join(" • ");
+      if (idLine) {
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK_SOFT);
+        doc.setFontSize(10);
+        doc.text(idLine, x + 14, y + 38, { maxWidth: colW - 28 });
       }
-      if (sizeActive && !sizes.has(a.clinic_size)) return false;
-      if (roleActive && !roles.has(a.doctor_role)) return false;
+    }
 
-      const hasContact = (a.consent_contact || a.consent) ? true : false;
-      if (respondent === "Com contato" && !hasContact) return false;
-      if (respondent === "Sem contato" && hasContact) return false;
+    let rowY = y + (consent ? 50 : 42);
 
-      return true;
-    });
-  }, [answers, range, customFrom, customTo, sizes, roles, respondent]);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(INK);
+    doc.setFontSize(11);
+    doc.text("No-show", x + 14, rowY);
+    rowY += 4;
+    let px = x + 14;
+    px += drawPill(doc, px, rowY, safeText(a.q_noshow_relevance)).width + 8;
+    px += drawPill(doc, px, rowY, safeText(a.q_noshow_has_system)).width + 8;
+    drawPill(doc, px, rowY, safeText(a.q_noshow_financial_impact));
+    rowY += 28;
 
-  // KPIs
-  const kpi = useMemo(() => {
-    const tot = filtered.length;
-    const noshowYes = filtered.filter((a) => a.q_noshow_relevance === "Sim").length;
-    const glosaYes = filtered.filter((a) => a.q_glosa_is_problem === "Sim").length;
-    const rxYes = filtered.filter((a) => a.q_rx_rework === "Sim").length;
-    return {
-      total: tot,
-      noshowYesPct: tot ? (noshowYes / tot) * 100 : 0,
-      glosaRecorrentePct: tot ? (glosaYes / tot) * 100 : 0,
-      rxReworkPct: tot ? (rxYes / tot) * 100 : 0,
-    };
-  }, [filtered]);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(INK);
+    doc.setFontSize(11);
+    doc.text("Glosas", x + 14, rowY);
+    rowY += 4;
+    px = x + 14;
+    px += drawPill(doc, px, rowY, safeText(a.q_glosa_is_problem)).width + 8;
+    px += drawPill(doc, px, rowY, safeText(a.q_glosa_interest)).width + 8;
+    drawPill(doc, px, rowY, safeText(a.q_glosa_who_suffers));
+    rowY += 28;
 
-  // Distros
-  const distNoshow = useMemo(
-    () => ({
-      relev: distribution(filtered, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]),
-      sys: distribution(filtered, "q_noshow_has_system", ["Sim", "Não"]),
-      impact: distribution(filtered, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]),
-    }),
-    [filtered]
-  );
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(INK);
+    doc.setFontSize(11);
+    doc.text("Receitas digitais", x + 14, rowY);
+    rowY += 4;
+    px = x + 14;
+    px += drawPill(doc, px, rowY, safeText(a.q_rx_rework)).width + 8;
+    px += drawPill(doc, px, rowY, safeText(a.q_rx_elderly_difficulty)).width + 8;
+    drawPill(doc, px, rowY, safeText(a.q_rx_tool_value));
+    rowY += 28;
 
-  const distGlosas = useMemo(
-    () => ({
-      rec: distribution(filtered, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]),
-      chk: distribution(filtered, "q_glosa_interest", ["Sim", "Não", "Talvez"]),
-      who: distribution(filtered, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]),
-    }),
-    [filtered]
-  );
+    if (commentLines.length) {
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(11);
+      doc.text("Comentário (resumo)", x + 14, rowY);
+      rowY += 16;
 
-  const distRx = useMemo(
-    () => ({
-      rw: distribution(filtered, "q_rx_rework", ["Sim", "Não", "Raramente"]),
-      dif: distribution(filtered, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]),
-      val: distribution(filtered, "q_rx_tool_value", ["Sim", "Não", "Talvez"]),
-    }),
-    [filtered]
-  );
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(11);
+      doc.text(commentLines, x + 14, rowY);
+      rowY += commentH;
+    }
 
-  const resetFilters = () => {
-    setRange("all");
-    setCustomFrom("");
-    setCustomTo("");
-    setSizes(new Set());
-    setRoles(new Set());
-    setRespondent("Todos");
+    rowY += 12;
+    const usedH = rowY - y;
+    if (usedH + 10 > cardH) {
+      cardH = usedH + 10;
+    }
+
+    if (col === 1) y += cardH + 12;
+  });
+}
+
+/** Tabelas por tema para > 20 respostas */
+function renderDetailedAsTables(
+  doc: jsPDF,
+  answers: Answer[],
+  pageW: number,
+  pageH: number,
+  marginX: number,
+  title: string,
+  logoDataUrl?: string | null
+) {
+  type Row = { resp: string; a: string; b: string; c: string };
+
+  const buildRows = (keys: [keyof Answer, keyof Answer, keyof Answer]): Row[] => {
+    return answers.map((a, i) => ({
+      resp: `R-${String(i + 1).padStart(2, "0")}`,
+      a: safeText(a[keys[0]]),
+      b: safeText(a[keys[1]]),
+      c: safeText(a[keys[2]]),
+    }));
   };
 
-  if (loading) {
-    return (
-      <div className="max-w-6xl mx-auto px-6 py-10">
-        <div className="card">Carregando…</div>
-      </div>
-    );
-  }
+  const sections: Array<{ title: string; rows: Row[]; heads: [string, string, string] }> = [
+    {
+      title: "No-show (linha = respondente)",
+      rows: buildRows(["q_noshow_relevance", "q_noshow_has_system", "q_noshow_financial_impact"]),
+      heads: ["Relevância", "Sistema", "Impacto"],
+    },
+    {
+      title: "Glosas (linha = respondente)",
+      rows: buildRows(["q_glosa_is_problem", "q_glosa_interest", "q_glosa_who_suffers"]),
+      heads: ["Recorrência", "Checagem", "Quem sofre"],
+    },
+    {
+      title: "Receitas digitais (linha = respondente)",
+      rows: buildRows(["q_rx_rework", "q_rx_elderly_difficulty", "q_rx_tool_value"]),
+      heads: ["Retrabalho", "Dificuldade", "Valor na ferramenta"],
+    },
+  ];
 
-  return (
-    <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
-      {/* HEADER */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <ExportPDFButton
-          kpi={kpi}
-          summaryRows={[]}
-          answers={filtered}
-        />
-      </div>
+  const headerGap = 28;
+  const topY = 14 + 72 + 12 + headerGap + TOP_GAP;
 
-      {/* FILTROS */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Período */}
-          <div>
-            <div className="text-sm font-semibold text-slate-700 mb-2">Período rápido</div>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: "7d", label: "Últimos 7d" },
-                { id: "30d", label: "Últimos 30d" },
-                { id: "90d", label: "Últimos 90d" },
-                { id: "all", label: "Tudo" },
-              ].map((b: any) => (
-                <button
-                  key={b.id}
-                  onClick={() => setRange(b.id)}
-                  className={`px-4 py-2 rounded-full border ${range === b.id ? "bg-[var(--brand-1)] text-white border-[var(--brand-1)]" : "border-slate-300 text-slate-700 bg-white"}`}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-3">
-              <div className="text-sm font-semibold text-slate-700 mb-2">Intervalo custom</div>
-              <div className="flex items-center gap-2">
-                <input
-                  value={customFrom}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                  placeholder="dd/mm/aaaa"
-                  className="input w-40"
-                />
-                <span className="text-slate-500">até</span>
-                <input
-                  value={customTo}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                  placeholder="dd/mm/aaaa"
-                  className="input w-40"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Dimensões */}
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <div className="text-sm font-semibold text-slate-700 mb-2">Tamanho do consultório/clínica</div>
-              <div className="flex flex-wrap gap-2">
-                {(["Pequeno", "Médio", "Grande"] as const).map((opt) => {
-                  const active = sizes.has(opt);
-                  return (
-                    <button
-                      key={opt}
-                      onClick={() => {
-                        const n = new Set(sizes);
-                        active ? n.delete(opt) : n.add(opt);
-                        setSizes(n);
-                      }}
-                      className={`px-4 py-2 rounded-full border ${active ? "bg-[var(--brand-1)] text-white border-[var(--brand-1)]" : "border-slate-300 text-slate-700 bg-white"}`}
-                    >
-                      {opt}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-sm font-semibold text-slate-700 mb-2">Especialidade / Função</div>
-              <div className="flex flex-wrap gap-2">
-                {(["Geriatra", "Dermatologista", "Ortopedista", "Outra"] as const).map((opt) => {
-                  const active = roles.has(opt);
-                  return (
-                    <button
-                      key={opt}
-                      onClick={() => {
-                        const n = new Set(roles);
-                        active ? n.delete(opt) : n.add(opt);
-                        setRoles(n);
-                      }}
-                      className={`px-4 py-2 rounded-full border ${active ? "bg-[var(--brand-1)] text-white border-[var(--brand-1)]" : "border-slate-300 text-slate-700 bg-white"}`}
-                    >
-                      {opt}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex items-end justify-between">
-              <div>
-                <div className="text-sm font-semibold text-slate-700 mb-2">Respondente</div>
-                <select
-                  value={respondent}
-                  onChange={(e) => setRespondent(e.target.value as any)}
-                  className="input"
-                >
-                  <option>Todos</option>
-                  <option>Com contato</option>
-                  <option>Sem contato</option>
-                </select>
-              </div>
-
-              <button onClick={resetFilters} className="px-4 py-2 rounded-xl border border-slate-300">
-                Resetar filtros
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* KPIs */}
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="card">
-          <div className="text-lg font-bold text-slate-900">Total de respostas (após filtros)</div>
-          <div className="mt-2 text-4xl font-extrabold text-slate-900">{kpi.total}</div>
-        </div>
-        <KpiDonut title="% no-show relevante" valuePct={kpi.noshowYesPct} />
-        <KpiDonut title="% glosas recorrentes" valuePct={kpi.glosaRecorrentePct} />
-        <KpiDonut title="% receitas geram retrabalho" valuePct={kpi.rxReworkPct} />
-      </section>
-
-      {/* NO-SHOW */}
-      <section className="card">
-        <h2 className="card-title mb-4">No-show</h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <DistBar title="Relevância" data={distNoshow.relev} />
-          <DistBar title="Possui sistema que resolve" data={distNoshow.sys} />
-          <DistBar title="Impacto financeiro mensal" data={distNoshow.impact} />
-        </div>
-      </section>
-
-      {/* GLOSAS */}
-      <section className="card">
-        <h2 className="card-title mb-4">Glosas</h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <DistBar title="Glosas recorrentes" data={distGlosas.rec} />
-          <DistBar title="Checagem antes do envio" data={distGlosas.chk} />
-          <DistBar title="Quem sofre mais" data={distGlosas.who} />
-        </div>
-      </section>
-
-      {/* RECEITAS DIGITAIS */}
-      <section className="card">
-        <h2 className="card-title mb-4">Receitas Digitais</h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <DistBar title="Geram retrabalho" data={distRx.rw} />
-          <DistBar title="Dificuldade dos pacientes" data={distRx.dif} />
-          <DistBar title="Valor em ferramenta de apoio" data={distRx.val} />
-        </div>
-      </section>
-
-      {/* LISTA DE RESPONDENTES */}
-      <section className="card">
-        <h2 className="card-title mb-4">Respondentes (dados para contato, quando autorizados)</h2>
-        <div className="space-y-2">
-          {filtered.map((a, i) => {
-            const consented = a.consent_contact || a.consent;
-            const name = (a.doctor_name || "").trim();
-            const crm = (a.crm || "").trim();
-            const contact = (a.contact || "").trim();
-            const show =
-              consented && (name.length > 0 || crm.length > 0 || contact.length > 0);
-
-            return (
-              <div key={a.id} className="rounded-lg border border-slate-200 p-3 bg-white">
-                <div className="flex items-center justify-between">
-                  <div className="font-semibold text-slate-800">R-{String(i + 1).padStart(2, "0")}</div>
-                  <div className="text-xs text-slate-500">{new Date(a.created_at).toLocaleString("pt-BR")}</div>
-                </div>
-                <div className="mt-2 text-sm text-slate-700">
-                  {show ? (
-                    <>
-                      {name && <span className="mr-3"><b>Nome:</b> {name}</span>}
-                      {crm && <span className="mr-3"><b>CRM:</b> {crm}</span>}
-                      {contact && <span className="mr-3"><b>Contato:</b> {contact}</span>}
-                    </>
-                  ) : (
-                    <span className="text-slate-500">Sem autorização de contato ou dados não informados.</span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          {!filtered.length && (
-            <div className="text-sm text-slate-500">Nenhuma resposta neste conjunto de filtros.</div>
-          )}
-        </div>
-      </section>
-    </div>
-  );
+  sections.forEach((sec, idx) => {
+    autoTable(doc as any, {
+      startY: idx === 0 ? topY : (doc as any).lastAutoTable.finalY + 26,
+      styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+      headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold" },
+      body: sec.rows,
+      columns: [
+        { header: sec.title, dataKey: "resp" },
+        { header: sec.heads[0], dataKey: "a" },
+        { header: sec.heads[1], dataKey: "b" },
+        { header: sec.heads[2], dataKey: "c" },
+      ],
+      columnStyles: {
+        resp: { cellWidth: 90 },
+        a: { cellWidth: 220, overflow: "linebreak" },
+        b: { cellWidth: 220, overflow: "linebreak" },
+        c: { cellWidth: 240, overflow: "linebreak" },
+      },
+      tableWidth: pageW - marginX * 2,
+      margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
+      theme: "grid",
+      rowPageBreak: "auto",
+      didDrawPage: () => {
+        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text("Respostas detalhadas (tabelas por tema)", marginX, sY + 18);
+        drawFooter(doc, pageW, pageH, marginX);
+      },
+    });
+  });
 }
 
-/* ============================ Estilos utilitários ============================
-.card { @apply rounded-2xl border border-slate-200 bg-white p-4; }
-.card-title { @apply text-lg font-bold text-slate-900; }
-.input { @apply px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand-1)]; }
-============================================================================= */
+/* ===================== Componente ===================== */
+
+export default function ExportPDFButton({ kpi, answers }: Props) {
+  const [loading, setLoading] = useState(false);
+
+  const onExport = useCallback(async () => {
+    setLoading(true);
+    try {
+      const logoDataUrl = await fetchAsDataURL("/logo.png");
+
+      const options: jsPDFOptions = { unit: "pt", format: "a4", orientation: "landscape" };
+      const doc = new jsPDF(options);
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const marginX = 48;
+      const title = "Relatório da Pesquisa — Clínicas e Consultórios";
+
+      /* ========= PÁGINA 1: Sumário + Resumo Executivo ========= */
+      let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+      drawFooter(doc, pageW, pageH, marginX);
+
+      const CARD_W = pageW - marginX * 2;
+      const PAD_X = 18;
+      const TITLE_GAP = 26;
+      const LINE = 18;
+
+      // SUMÁRIO (texto preto)
+      const tocItems = [
+        "Visão Geral (KPIs + distribuições)",
+        "Consolidado por tema",
+        "Respostas detalhadas",
+        "Comentários",
+        "Identificação (opcional)",
+      ];
+      const summaryTitleH = 16;
+      const summaryListH = tocItems.length * LINE;
+      const summaryPadBottom = 20;
+      const summaryCardH = TITLE_GAP + summaryTitleH + 8 + summaryListH + summaryPadBottom;
+
+      if (startY + summaryCardH > pageH - 60) {
+        startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      }
+
+      let y = startY;
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, y, CARD_W, summaryCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(16);
+      doc.text("Sumário", marginX + PAD_X, y + TITLE_GAP);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(12);
+
+      let listY = y + TITLE_GAP + summaryTitleH + 8;
+      tocItems.forEach((label, i) => {
+        doc.text(`${i + 1}. ${label}`, marginX + PAD_X, listY, { maxWidth: CARD_W - PAD_X * 2 });
+        listY += LINE;
+      });
+
+      // RESUMO EXECUTIVO
+      const bullets = [
+        `Amostra consolidada: ${kpi.total} respostas.`,
+        `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
+          0
+        )}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
+        "Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.",
+      ];
+
+      const reTitleH = 14;
+      const bulletsH = bullets.length * LINE;
+      const rePadBottom = 24;
+      const reCardH = TITLE_GAP + reTitleH + 8 + bulletsH + rePadBottom;
+
+      const gapBetweenCards = 20;
+      let reTop = y + summaryCardH + gapBetweenCards;
+
+      if (reTop + reCardH > pageH - 60) {
+        reTop = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      }
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, reTop, CARD_W, reCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Resumo Executivo — Principais insights", marginX + PAD_X, reTop + TITLE_GAP);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(12);
+
+      let by = reTop + TITLE_GAP + reTitleH + 8;
+      const maxW = CARD_W - PAD_X * 2;
+      bullets.forEach((line) => {
+        doc.circle(marginX + PAD_X, by - 3, 2, "F");
+        doc.text(line, marginX + PAD_X + 10, by, { maxWidth: maxW - 10 });
+        by += LINE;
+      });
+
+      /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3 compacta) ========= */
+      startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+
+      const gap = 16;
+      const kpiCardW = (pageW - marginX * 2 - gap * 3) / 4;
+      const kpiCardH = 82;
+
+      let kpiY = startY;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Visão Geral", marginX, kpiY + 2);
+      kpiY += 14;
+
+      drawKpiCard(doc, marginX + 0 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "Total de respostas", `${kpi.total}`, ACCENT);
+      drawKpiCard(doc, marginX + 1 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
+
+      let gridTop = kpiY + kpiCardH + 24;
+
+      const nsRelev  = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items;
+      const nsSys    = dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items;
+      const nsImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]).items;
+
+      const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items;
+      const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items;
+      const gWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]).items;
+
+      const rxRw  = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]).items;
+      const rxDif = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]).items;
+      const rxVal = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]).items;
+
+      const blocks: Array<{ title: string; items: DistItem[] }> = [
+        { title: "No-show — Relevância",                 items: nsRelev },
+        { title: "No-show — Sistema que resolve",        items: nsSys },
+        { title: "No-show — Impacto financeiro mensal",  items: nsImpact },
+        { title: "Glosas — Recorrência",                 items: gRec },
+        { title: "Glosas — Checagem antes do envio",     items: gInt },
+        { title: "Glosas — Quem sofre mais",             items: gWho },
+        { title: "Receitas — Geram retrabalho",          items: rxRw },
+        { title: "Receitas — Dificuldade dos pacientes", items: rxDif },
+        { title: "Receitas — Valor em ferramenta",       items: rxVal },
+      ];
+
+      const COLS = 3;
+      const COL_GAP = 18;
+      const COL_W = (pageW - marginX * 2 - COL_GAP * (COLS - 1)) / COLS;
+
+      let x = marginX;
+      let yCompact = gridTop;
+
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        const h = measureBarBlockCompact(b.items.length);
+
+        if (yCompact + h > pageH - 60) {
+          startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(INK);
+          doc.setFontSize(14);
+          doc.text("Visão Geral — Distribuições compactas", marginX, startY + 2);
+          yCompact = startY + 14;
+          x = marginX;
+        }
+
+        drawBarBlockCompact(doc, b.title, b.items, x, yCompact, COL_W);
+
+        const col = i % COLS;
+        if (col === COLS - 1) {
+          x = marginX;
+          yCompact += Math.max(h, 74);
+        } else {
+          x += COL_W + COL_GAP;
+        }
+      }
+
+      drawFooter(doc, pageW, pageH, marginX);
+
+      /* ========= PÁGINAS 3–5: Consolidado por TEMA ========= */
+      for (const key of ["noshow", "glosas", "receitas"] as SectionKey[]) {
+        doc.addPage();
+        renderSectionTable(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
+      }
+
+      /* ========= RESPOSTAS DETALHADAS — adaptativo ========= */
+      if (answers.length <= 20) {
+        renderDetailedAsCards(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
+      } else {
+        renderDetailedAsTables(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
+      }
+
+      /* ========= COMENTÁRIOS ========= */
+      const comments: Array<{ code: string; text: string }> = answers
+        .map((a, i) => ({
+          code: `R-${String(i + 1).padStart(2, "0")}`,
+          text: (a.comments || "").toString().trim(),
+        }))
+        .filter((c) => c.text.length > 0);
+
+      if (comments.length) {
+        doc.addPage();
+        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text("Comentários (texto livre) — referência por código da resposta", marginX, sY + 18);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK);
+        doc.setFontSize(12);
+
+        let yC = sY + 40;
+        const maxW = pageW - marginX * 2 - 20;
+        const lineH = 18;
+
+        comments.forEach((c) => {
+          const bullet = `${c.code} — ${c.text}`;
+          const lines = doc.splitTextToSize(bullet, maxW);
+          if (yC + lines.length * lineH > pageH - 60) {
+            drawFooter(doc, pageW, pageH, marginX);
+            doc.addPage();
+            const sY2 = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(14);
+            doc.text("Comentários (continuação)", marginX, sY2 + 18);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(INK);
+            doc.setFontSize(12);
+            yC = sY2 + 40;
+          }
+          doc.text(lines, marginX + 10, yC);
+          yC += lines.length * lineH + 8;
+        });
+
+        drawFooter(doc, pageW, pageH, marginX);
+      }
+
+      /* ========= IDENTIFICAÇÃO (se autorizado) ========= */
+      const idRows = answers
+        .filter((a) => a.consent_contact === true || a.consent === true)
+        .map((a, i) => ({
+          resp: `R-${String(i + 1).padStart(2, "0")}`,
+          nome: (a.doctor_name || "").toString().trim() || "—",
+          crm: (a.crm || "").toString().trim() || "—",
+          contato: (a.contact || "").toString().trim() || "—",
+        }))
+        .filter((r) => r.nome !== "—" || r.crm !== "—" || r.contato !== "—");
+
+      if (idRows.length) {
+        doc.addPage();
+        const headerGap = 28;
+        const topY = 14 + 72 + 12 + headerGap + TOP_GAP;
+
+        autoTable(doc as any, {
+          startY: topY,
+          styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+          headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+          body: idRows,
+          columns: [
+            { header: "Resp.", dataKey: "resp" },
+            { header: "Nome", dataKey: "nome" },
+            { header: "CRM", dataKey: "crm" },
+            { header: "Contato (e-mail / WhatsApp)", dataKey: "contato" },
+          ],
+          tableWidth: pageW - marginX * 2,
+          margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
+          theme: "grid",
+          rowPageBreak: "auto",
+          didDrawPage: () => {
+            const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(14);
+            doc.text("Identificação (somente com autorização de contato)", marginX, sY + 18);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(INK_SOFT);
+            doc.setFontSize(11);
+            doc.text("Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.", marginX, sY + 36);
+            drawFooter(doc, pageW, pageH, marginX);
+          },
+        });
+      }
+
+      const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
+      doc.save(fileName);
+    } finally {
+      setLoading(false);
+    }
+  }, [answers, kpi]);
+
+  return (
+    <button
+      type="button"
+      onClick={onExport}
+      disabled={loading}
+      aria-busy={loading}
+      className="inline-flex items-center rounded-xl px-4 py-2 font-medium text-white disabled:opacity-60"
+      style={{
+        background: "linear-gradient(90deg, #1976d2, #2575fc)",
+        boxShadow: "0 6px 16px rgba(25,118,210,.25)",
+      }}
+    >
+      {loading ? "Gerando PDF..." : "Exportar PDF (apresentação)"}
+    </button>
+  );
+}
