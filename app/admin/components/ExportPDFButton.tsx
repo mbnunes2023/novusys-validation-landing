@@ -35,6 +35,7 @@ const INK_SOFT = "#64748b";
 const CARD_EDGE = "#e9edf7";
 const LOGO_SRC = "/logo.png";
 
+/* Utilidades */
 function formatNow(): string {
   const d = new Date();
   return new Intl.DateTimeFormat("pt-BR", {
@@ -43,24 +44,26 @@ function formatNow(): string {
   }).format(d);
 }
 
-function loadImage(src: string): Promise<{ img: HTMLImageElement; ratio: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () =>
-      resolve({ img, ratio: (img.naturalWidth || 1) / (img.naturalHeight || 1) });
-    img.onerror = reject;
-    img.src = src;
-  });
-}
-
 async function nodeToPNG(el?: HTMLElement | null, width = 1200): Promise<string | null> {
   if (!el) return null;
   try {
-    return await htmlToImage.toPng(el, {
-      cacheBust: true,
-      pixelRatio: 2,
-      width,
+    return await htmlToImage.toPng(el, { cacheBust: true, pixelRatio: 2, width });
+  } catch {
+    return null;
+  }
+}
+
+/** Carrega o logo como dataURL (mais estável que Image()/CORS) */
+async function fetchAsDataURL(src: string): Promise<string | null> {
+  try {
+    const res = await fetch(src, { cache: "no-store" });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = reject;
+      r.readAsDataURL(blob);
     });
   } catch {
     return null;
@@ -73,7 +76,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
   const onExport = useCallback(async () => {
     setLoading(true);
     try {
-      // A4 em paisagem
+      // A4 paisagem
       const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
@@ -95,7 +98,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       };
 
       const drawHeader = async () => {
-        // faixa superior
+        // barra
         doc.setFillColor(BRAND_BLUE);
         doc.rect(0, 0, pageW, 6, "F");
 
@@ -105,43 +108,53 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         doc.setLineWidth(1);
         doc.roundedRect(M, 16, CONTENT_W, headerH, 10, 10, "FD");
 
+        const logoData = await fetchAsDataURL(LOGO_SRC);
+        const baseX = M + 16;
+        const baseY = 16;
+
         try {
-          const { img, ratio } = await loadImage(LOGO_SRC);
-          const logoH = 36;
-          const logoW = Math.round(logoH * ratio);
-          const logoX = M + 16;
-          const logoY = 16 + (headerH - logoH) / 2;
-          doc.addImage(img, "PNG", logoX, logoY, logoW, logoH);
+          if (logoData) {
+            const logoH = 36;
+            const logoW = 36 * 2.7; // proporção aproximada do seu logo
+            const logoX = baseX;
+            const logoY = baseY + (headerH - logoH) / 2;
+            doc.addImage(logoData, "PNG", logoX, logoY, logoW, logoH);
 
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(INK);
-          doc.setFontSize(22);
-          doc.text(
-            "Relatório da Pesquisa — Clínicas e Consultórios",
-            logoX + logoW + 14,
-            logoY + 22
-          );
-
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(INK_SOFT);
-          doc.setFontSize(11);
-          doc.text(`Gerado em ${formatNow()}`, logoX + logoW + 14, logoY + 42);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(22);
+            doc.text(
+              "Relatório da Pesquisa — Clínicas e Consultórios",
+              logoX + logoW + 14,
+              logoY + 22
+            );
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(INK_SOFT);
+            doc.setFontSize(11);
+            doc.text(`Gerado em ${formatNow()}`, logoX + logoW + 14, logoY + 42);
+          } else {
+            // fallback sem imagem
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(22);
+            doc.text(
+              "Relatório da Pesquisa — Clínicas e Consultórios",
+              baseX,
+              baseY + 46
+            );
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(INK_SOFT);
+            doc.setFontSize(11);
+            doc.text(`Gerado em ${formatNow()}`, baseX, baseY + 66);
+          }
         } catch {
-          // fallback sem logo
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(INK);
-          doc.setFontSize(22);
-          doc.text("Relatório da Pesquisa — Clínicas e Consultórios", M + 16, 16 + 46);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(INK_SOFT);
-          doc.setFontSize(11);
-          doc.text(`Gerado em ${formatNow()}`, M + 16, 16 + 66);
+          // nunca abortar o PDF por causa do logo
         }
 
         y = 16 + headerH + 16;
       };
 
-      // >>> a partir daqui: toda quebra usa await
+      // Quebra assíncrona aguardada SEMPRE antes de desenhar bloco
       const ensure = async (h: number) => {
         if (y + h > pageH - M - FOOTER_H) {
           addFooter();
@@ -189,7 +202,6 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
 
         y += H + 10;
 
-        // 3º KPI (retrabalho)
         await ensure(H);
         doc.setDrawColor(CARD_EDGE);
         doc.setFillColor("#ffffff");
@@ -205,22 +217,32 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         y += H + 18;
       };
 
-      const drawChartBlock = async (title: string, dataUrl: string | null, preferredH = 210) => {
-        const h = preferredH;
+      const drawChartBlock = async (
+        title: string,
+        dataUrl: string | null,
+        preferredH = 200
+      ) => {
         await sectionTitle(title);
-        await ensure(h + 10);
+        await ensure(preferredH + 10);
 
-        if (dataUrl) {
-          doc.addImage(dataUrl, "PNG", M, y, CONTENT_W, h);
-        } else {
+        try {
+          if (dataUrl) {
+            doc.addImage(dataUrl, "PNG", M, y, CONTENT_W, preferredH);
+          } else {
+            doc.setDrawColor(CARD_EDGE);
+            doc.setLineWidth(1);
+            doc.roundedRect(M, y, CONTENT_W, preferredH, 10, 10);
+          }
+        } catch {
+          // fallback: só a moldura
           doc.setDrawColor(CARD_EDGE);
           doc.setLineWidth(1);
-          doc.roundedRect(M, y, CONTENT_W, h, 10, 10);
+          doc.roundedRect(M, y, CONTENT_W, preferredH, 10, 10);
         }
-        y += h + 20;
+        y += preferredH + 20;
       };
 
-      // ===== construção =====
+      /* ===== Geração ===== */
       await drawHeader();
       await drawKPI();
 
@@ -231,9 +253,12 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       await drawChartBlock("Distribuição — Glosas (recorrência / interesse)", g2);
 
       const g3 = await nodeToPNG(chartRefs.rxRef.current, 1400);
-      await drawChartBlock("Distribuição — Receitas Digitais (retrabalho / dificuldade / valor)", g3);
+      await drawChartBlock(
+        "Distribuição — Receitas Digitais (retrabalho / dificuldade / valor)",
+        g3
+      );
 
-      // Tabela 1 — Resumo
+      // Resumo
       await ensure(60);
       await sectionTitle("Resumo consolidado por pergunta");
 
@@ -249,41 +274,49 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         ).map((k) => ({ header: k, dataKey: k })),
       ];
 
-      autoTable(doc as any, {
-        startY: y + 6,
-        margin: { left: M, right: M },
-        styles: {
-          font: "helvetica",
-          fontSize: 10,
-          textColor: INK,
-          cellPadding: 6,
-          lineColor: CARD_EDGE,
-        },
-        headStyles: {
-          fillColor: [25, 118, 210],
-          textColor: "#ffffff",
-          fontStyle: "bold",
-        },
-        alternateRowStyles: { fillColor: "#fbfdff" },
-        body: summaryRows,
-        columns: summaryColumns,
-        theme: "grid",
-        pageBreak: "avoid",
-        didDrawPage: () => {
-          // header/rodapé a cada página gerada pela tabela
-          doc.setFillColor(BRAND_BLUE);
-          doc.rect(0, 0, pageW, 6, "F");
-          const year = new Date().getFullYear();
-          const footer = `© ${year} NovuSys — Relatório gerado automaticamente`;
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(9);
-          doc.setTextColor(INK_SOFT);
-          const w = doc.getTextWidth(footer);
-          doc.text(footer, pageW - M - w, pageH - 10);
-        },
-      });
+      try {
+        autoTable(doc as any, {
+          startY: y + 6,
+          margin: { left: M, right: M },
+          styles: {
+            font: "helvetica",
+            fontSize: 10,
+            textColor: INK,
+            cellPadding: 6,
+            lineColor: CARD_EDGE,
+          },
+          headStyles: {
+            fillColor: [25, 118, 210],
+            textColor: "#ffffff",
+            fontStyle: "bold",
+          },
+          alternateRowStyles: { fillColor: "#fbfdff" },
+          body: summaryRows,
+          columns: summaryColumns,
+          theme: "grid",
+          pageBreak: "avoid",
+          didDrawPage: () => {
+            doc.setFillColor(BRAND_BLUE);
+            doc.rect(0, 0, pageW, 6, "F");
+            const year = new Date().getFullYear();
+            const footer = `© ${year} NovuSys — Relatório gerado automaticamente`;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            doc.setTextColor(INK_SOFT);
+            const w = doc.getTextWidth(footer);
+            doc.text(footer, pageW - M - w, pageH - 10);
+          },
+        });
+      } catch {
+        await ensure(24);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK_SOFT);
+        doc.setFontSize(11);
+        doc.text("Resumo indisponível.", M, y + 14);
+        y += 24;
+      }
 
-      // Tabela 2 — Detalhes
+      // Detalhes
       addFooter();
       doc.addPage();
       y = M;
@@ -298,37 +331,46 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
 
       const detailBody = answers.length ? answers : [{ total: 0 }];
 
-      autoTable(doc as any, {
-        startY: y + 6,
-        margin: { left: M, right: M },
-        styles: {
-          font: "helvetica",
-          fontSize: 9,
-          textColor: INK,
-          cellPadding: 5,
-          lineColor: CARD_EDGE,
-        },
-        headStyles: {
-          fillColor: [37, 117, 252],
-          textColor: "#ffffff",
-          fontStyle: "bold",
-        },
-        body: detailBody,
-        columns: detailCols,
-        theme: "grid",
-        pageBreak: "auto",
-        didDrawPage: () => {
-          doc.setFillColor(BRAND_BLUE);
-          doc.rect(0, 0, pageW, 6, "F");
-          const year = new Date().getFullYear();
-          const footer = `© ${year} NovuSys — Relatório gerado automaticamente`;
-          doc.setFont("helvetica", "normal");
-          doc.setFontSize(9);
-          doc.setTextColor(INK_SOFT);
-          const w = doc.getTextWidth(footer);
-          doc.text(footer, pageW - M - w, pageH - 10);
-        },
-      });
+      try {
+        autoTable(doc as any, {
+          startY: y + 6,
+          margin: { left: M, right: M },
+          styles: {
+            font: "helvetica",
+            fontSize: 9,
+            textColor: INK,
+            cellPadding: 5,
+            lineColor: CARD_EDGE,
+          },
+          headStyles: {
+            fillColor: [37, 117, 252],
+            textColor: "#ffffff",
+            fontStyle: "bold",
+          },
+          body: detailBody,
+          columns: detailCols,
+          theme: "grid",
+          pageBreak: "auto",
+          didDrawPage: () => {
+            doc.setFillColor(BRAND_BLUE);
+            doc.rect(0, 0, pageW, 6, "F");
+            const year = new Date().getFullYear();
+            const footer = `© ${year} NovuSys — Relatório gerado automaticamente`;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            doc.setTextColor(INK_SOFT);
+            const w = doc.getTextWidth(footer);
+            doc.text(footer, pageW - M - w, pageH - 10);
+          },
+        });
+      } catch {
+        await ensure(24);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK_SOFT);
+        doc.setFontSize(11);
+        doc.text("Detalhes indisponíveis.", M, y + 14);
+        y += 24;
+      }
 
       // salvar
       const pad = (n: number) => String(n).padStart(2, "0");
