@@ -49,46 +49,50 @@ function formatNow(): string {
   }).format(d);
 }
 
-/** Baixa o logo como DataURL + calcula o ratio (sem CORS) */
-async function loadLogoDataURL(path: string): Promise<{ dataUrl: string; ratio: number }> {
-  const res = await fetch(path, { cache: "no-store" });
-  if (!res.ok) throw new Error("Logo não encontrado");
-  const blob = await res.blob();
+/** Tenta carregar o logo como DataURL; se falhar, retorna null (PDF continua) */
+async function safeLoadLogoDataURL(path: string): Promise<{ dataUrl: string; ratio: number } | null> {
+  try {
+    const res = await fetch(path, { cache: "no-store" });
+    if (!res.ok) throw new Error("Logo não encontrado");
+    const blob = await res.blob();
 
-  // Descobre dimensão para manter proporção
-  const ratio = await new Promise<number>((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      const r = (img.naturalWidth || 1) / (img.naturalHeight || 1);
-      URL.revokeObjectURL(url);
-      resolve(r);
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
+    const ratio = await new Promise<number>((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const r = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+        URL.revokeObjectURL(url);
+        resolve(r);
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
 
-  // Converte para DataURL
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(String(fr.result));
-    fr.onerror = reject;
-    fr.readAsDataURL(blob);
-  });
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = reject;
+      fr.readAsDataURL(blob);
+    });
 
-  return { dataUrl, ratio };
+    return { dataUrl, ratio };
+  } catch {
+    return null;
+  }
 }
 
-/** Converte nó (gráfico) para PNG; se falhar, retorna null (sem quebrar) */
-async function nodeToPNG(el?: HTMLElement | null): Promise<string | null> {
+/** Converte um nó para PNG com limites seguros; se falhar, retorna null */
+async function safeNodeToPNG(el?: HTMLElement | null): Promise<string | null> {
   if (!el) return null;
   try {
-    const w =
+    const rawW =
       el.scrollWidth || el.clientWidth || (el as HTMLElement).offsetWidth || 1200;
+    const width = Math.min(Math.max(rawW, 800), 1600); // clamp para evitar OOM
     return await htmlToImage.toPng(el, {
       cacheBust: true,
-      pixelRatio: 2,
-      width: w,
+      pixelRatio: 1.5, // menos custoso e estável
+      width,
+      style: { transform: "none" }, // evita zooms/anim
     });
   } catch {
     return null;
@@ -102,9 +106,9 @@ function drawHeaderSync(
   pageW: number,
   marginX: number,
   title: string,
-  logo: { dataUrl: string; ratio: number }
+  logo?: { dataUrl: string; ratio: number } | null
 ): number {
-  // Faixa
+  // Faixa superior
   doc.setFillColor(BRAND_BLUE);
   doc.rect(0, 0, pageW, 6, "F");
 
@@ -115,23 +119,27 @@ function drawHeaderSync(
   doc.setLineWidth(1);
   doc.roundedRect(marginX, 14, pageW - marginX * 2, headerH, 10, 10, "FD");
 
-  // Logo proporcional (DataURL -> sempre síncrono e sem CORS)
+  // Logo (se disponível)
+  let logoW = 0;
   const logoH = 36;
-  const logoW = Math.round(logoH * logo.ratio);
   const logoX = marginX + 16;
   const logoY = 14 + (headerH - logoH) / 2;
-  doc.addImage(logo.dataUrl, "PNG", logoX, logoY, logoW, logoH);
+  if (logo) {
+    logoW = Math.round(logoH * logo.ratio);
+    doc.addImage(logo.dataUrl, "PNG", logoX, logoY, logoW, logoH);
+  }
 
   // Título + data
+  const textX = logo ? logoX + logoW + 12 : logoX;
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(18);
-  doc.text(title, logoX + logoW + 12, logoY + 20);
+  doc.text(title, textX, logoY + 20);
 
   doc.setFont("helvetica", "normal");
   doc.setTextColor(INK_SOFT);
   doc.setFontSize(10);
-  doc.text(`Gerado em ${formatNow()}`, logoX + logoW + 12, logoY + 38);
+  doc.text(`Gerado em ${formatNow()}`, textX, logoY + 38);
 
   return 14 + headerH + 10;
 }
@@ -152,7 +160,7 @@ function drawFooterSync(doc: jsPDF, pageW: number, pageH: number, marginX: numbe
 
 function newPageSync(
   doc: jsPDF,
-  opts: { title: string; marginX: number; pageW: number; pageH: number; logo: { dataUrl: string; ratio: number } }
+  opts: { title: string; marginX: number; pageW: number; pageH: number; logo?: { dataUrl: string; ratio: number } | null }
 ) {
   doc.addPage();
   const startY = drawHeaderSync(doc, opts.pageW, opts.marginX, opts.title, opts.logo);
@@ -184,19 +192,19 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
   const onExport = useCallback(async () => {
     setLoading(true);
     try {
-      // Carrega logo como DataURL (uma vez, fora de didDrawPage)
-      const logo = await loadLogoDataURL(LOGO_SRC);
+      // 1) Tenta carregar o logo; se falhar, segue sem logo
+      const logo = await safeLoadLogoDataURL(LOGO_SRC);
 
-      // PDF em PAISAGEM
+      // 2) PDF paisagem
       const options: jsPDFOptions = { unit: "pt", format: "a4", orientation: "landscape" };
       const doc = new jsPDF(options);
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
       const marginX = 48;
-      const reportTitle = "Relatório da Pesquisa — Clínicas e Consultórios";
+      const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
       /* ========= PÁG. 1 — KPIs ========= */
-      let cursorY = drawHeaderSync(doc, pageW, marginX, reportTitle, logo);
+      let cursorY = drawHeaderSync(doc, pageW, marginX, title, logo);
       drawFooterSync(doc, pageW, pageH, marginX);
 
       doc.setFont("helvetica", "bold");
@@ -239,7 +247,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       );
 
       /* ========= PÁG. 2 — No-show ========= */
-      cursorY = newPageSync(doc, { title: reportTitle, marginX, pageW, pageH, logo });
+      cursorY = newPageSync(doc, { title, marginX, pageW, pageH, logo });
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
@@ -247,7 +255,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       doc.text("Distribuição — No-show relevante", marginX, cursorY);
       cursorY += 10;
 
-      const g1 = await nodeToPNG(chartRefs.noshowRef.current);
+      const g1 = await safeNodeToPNG(chartRefs.noshowRef.current);
       const chartH = pageH - cursorY - 36;
       if (g1) {
         doc.addImage(g1, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
@@ -255,11 +263,15 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         doc.setDrawColor(CARD_EDGE);
         doc.setLineWidth(1);
         doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK_SOFT);
+        doc.setFontSize(11);
+        doc.text("Gráfico indisponível no momento.", marginX + 14, cursorY + 24);
       }
       drawFooterSync(doc, pageW, pageH, marginX);
 
       /* ========= PÁG. 3 — Glosas ========= */
-      cursorY = newPageSync(doc, { title: reportTitle, marginX, pageW, pageH, logo });
+      cursorY = newPageSync(doc, { title, marginX, pageW, pageH, logo });
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
@@ -267,18 +279,22 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       doc.text("Distribuição — Glosas (recorrência / interesse)", marginX, cursorY);
       cursorY += 10;
 
-      const g2 = await nodeToPNG(chartRefs.glosaRef.current);
+      const g2 = await safeNodeToPNG(chartRefs.glosaRef.current);
       if (g2) {
         doc.addImage(g2, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
       } else {
         doc.setDrawColor(CARD_EDGE);
         doc.setLineWidth(1);
         doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK_SOFT);
+        doc.setFontSize(11);
+        doc.text("Gráfico indisponível no momento.", marginX + 14, cursorY + 24);
       }
       drawFooterSync(doc, pageW, pageH, marginX);
 
       /* ========= PÁG. 4 — Receitas Digitais ========= */
-      cursorY = newPageSync(doc, { title: reportTitle, marginX, pageW, pageH, logo });
+      cursorY = newPageSync(doc, { title, marginX, pageW, pageH, logo });
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
@@ -286,92 +302,121 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       doc.text("Distribuição — Receitas Digitais (retrabalho / dificuldade / valor)", marginX, cursorY);
       cursorY += 10;
 
-      const g3 = await nodeToPNG(chartRefs.rxRef.current);
+      const g3 = await safeNodeToPNG(chartRefs.rxRef.current);
       if (g3) {
         doc.addImage(g3, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
       } else {
         doc.setDrawColor(CARD_EDGE);
         doc.setLineWidth(1);
         doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK_SOFT);
+        doc.setFontSize(11);
+        doc.text("Gráfico indisponível no momento.", marginX + 14, cursorY + 24);
       }
       drawFooterSync(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 5 — Resumo (tabela) ========= */
+      /* ========= PÁG. 5 — Resumo ========= */
       const tableTopMargin = 14 + 76 + 10 + 12; // header + respiro
       doc.addPage();
-      autoTable(doc as any, {
-        styles: {
-          font: "helvetica",
-          fontSize: 10,
-          textColor: INK,
-          cellPadding: 6,
-          lineColor: CARD_EDGE,
-        },
-        headStyles: {
-          fillColor: [25, 118, 210],
-          textColor: "#ffffff",
-          fontStyle: "bold",
-        },
-        alternateRowStyles: { fillColor: "#fbfdff" },
-        body: summaryRows,
-        columns: [
-          { header: "Pergunta", dataKey: "pergunta" },
-          ...Object.keys(
-            summaryRows.reduce((acc, r) => {
-              Object.keys(r).forEach((k) => {
-                if (k !== "pergunta") acc[k] = true;
-              });
-              return acc;
-            }, {} as Record<string, boolean>)
-          ).map((k) => ({ header: k, dataKey: k })),
-        ],
-        margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
-        theme: "grid",
-        didDrawPage: () => {
-          // Síncrono: usa DataURL do logo
-          const startY = drawHeaderSync(doc, pageW, marginX, reportTitle, logo);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(INK);
-          doc.setFontSize(14);
-          doc.text("Resumo consolidado por pergunta", marginX, startY + 2);
-          drawFooterSync(doc, pageW, pageH, marginX);
-        },
-      });
+      try {
+        autoTable(doc as any, {
+          styles: {
+            font: "helvetica",
+            fontSize: 10,
+            textColor: INK,
+            cellPadding: 6,
+            lineColor: CARD_EDGE,
+          },
+          headStyles: {
+            fillColor: [25, 118, 210],
+            textColor: "#ffffff",
+            fontStyle: "bold",
+          },
+          alternateRowStyles: { fillColor: "#fbfdff" },
+          body: summaryRows,
+          columns: [
+            { header: "Pergunta", dataKey: "pergunta" },
+            ...Object.keys(
+              summaryRows.reduce((acc, r) => {
+                Object.keys(r).forEach((k) => {
+                  if (k !== "pergunta") acc[k] = true;
+                });
+                return acc;
+              }, {} as Record<string, boolean>)
+            ).map((k) => ({ header: k, dataKey: k })),
+          ],
+          margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
+          theme: "grid",
+          didDrawPage: () => {
+            const startY = drawHeaderSync(doc, pageW, marginX, title, logo);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(14);
+            doc.text("Resumo consolidado por pergunta", marginX, startY + 2);
+            drawFooterSync(doc, pageW, pageH, marginX);
+          },
+        });
+      } catch {
+        const startY = drawHeaderSync(doc, pageW, marginX, title, logo);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text("Resumo consolidado por pergunta", marginX, startY + 2);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK_SOFT);
+        doc.setFontSize(11);
+        doc.text("Não foi possível renderizar a tabela de resumo.", marginX, startY + 24);
+        drawFooterSync(doc, pageW, pageH, marginX);
+      }
 
       /* ========= PÁGs. 6+ — Detalhes ========= */
       const firstRow = answers[0] || {};
       const detailCols = Object.keys(firstRow).map((k) => ({ header: k, dataKey: k }));
       if (detailCols.length) {
         doc.addPage();
-        autoTable(doc as any, {
-          styles: {
-            font: "helvetica",
-            fontSize: 9,
-            textColor: INK,
-            cellPadding: 5,
-            lineColor: CARD_EDGE,
-          },
-          headStyles: {
-            fillColor: [37, 117, 252],
-            textColor: "#ffffff",
-            fontStyle: "bold",
-          },
-          body: answers,
-          columns: detailCols,
-          margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
-          theme: "grid",
-          didDrawPage: () => {
-            const startY = drawHeaderSync(doc, pageW, marginX, reportTitle, logo);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(INK);
-            doc.setFontSize(14);
-            doc.text("Respostas detalhadas (sem identificação sensível)", marginX, startY + 2);
-            drawFooterSync(doc, pageW, pageH, marginX);
-          },
-        });
+        try {
+          autoTable(doc as any, {
+            styles: {
+              font: "helvetica",
+              fontSize: 9,
+              textColor: INK,
+              cellPadding: 5,
+              lineColor: CARD_EDGE,
+            },
+            headStyles: {
+              fillColor: [37, 117, 252],
+              textColor: "#ffffff",
+              fontStyle: "bold",
+            },
+            body: answers,
+            columns: detailCols,
+            margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
+            theme: "grid",
+            didDrawPage: () => {
+              const startY = drawHeaderSync(doc, pageW, marginX, title, logo);
+              doc.setFont("helvetica", "bold");
+              doc.setTextColor(INK);
+              doc.setFontSize(14);
+              doc.text("Respostas detalhadas (sem identificação sensível)", marginX, startY + 2);
+              drawFooterSync(doc, pageW, pageH, marginX);
+            },
+          });
+        } catch {
+          const startY = drawHeaderSync(doc, pageW, marginX, title, logo);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(INK);
+          doc.setFontSize(14);
+          doc.text("Respostas detalhadas (sem identificação sensível)", marginX, startY + 2);
+          doc.setFont("helvetica", "normal");
+          doc.setTextColor(INK_SOFT);
+          doc.setFontSize(11);
+          doc.text("Não foi possível renderizar a tabela de detalhes.", marginX, startY + 24);
+          drawFooterSync(doc, pageW, pageH, marginX);
+        }
       }
 
-      // Salva
+      // 3) Salvar
       const pad = (n: number) => String(n).padStart(2, "0");
       const d = new Date();
       const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(
