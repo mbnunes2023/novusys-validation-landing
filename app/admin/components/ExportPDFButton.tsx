@@ -66,38 +66,80 @@ function centeredStartY(startY: number, pageH: number, blockH: number) {
   return startY + offset;
 }
 
+/* ===================== Utils para logo ===================== */
+
+// Carrega /logo.png e retorna como DataURL (base64). Em erro, retorna null.
+async function fetchAsDataURL(path: string): Promise<string | null> {
+  try {
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 /* ===================== Cabeçalho/Rodapé ===================== */
 
-function drawHeader(doc: jsPDF, pageW: number, marginX: number, title: string) {
+function drawHeader(
+  doc: jsPDF,
+  pageW: number,
+  marginX: number,
+  title: string,
+  logoDataUrl?: string | null
+) {
   // Faixa superior
   doc.setFillColor(BRAND_BLUE);
   doc.rect(0, 0, pageW, 6, "F");
 
   // Card do header
   const headerH = 70;
+  const cardX = marginX;
+  const cardY = 14;
+  const cardW = pageW - marginX * 2;
+
   doc.setFillColor("#ffffff");
   doc.setDrawColor(CARD_EDGE);
   doc.setLineWidth(1);
-  doc.roundedRect(marginX, 14, pageW - marginX * 2, headerH, 10, 10, "FD");
+  doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
 
-  // “Logo” tipográfico
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(BRAND_BLUE);
-  doc.setFontSize(22);
-  doc.text("NovuSys", marginX + 18, 14 + 26);
-
-  // Título + data
+  // (REMOVIDO) “NovuSys” tipográfico
+  // Desenha somente Título + data (lado esquerdo)
+  const leftPad = 18;
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(18);
-  doc.text(title, marginX + 18, 14 + 26 + 24);
+  doc.text(title, cardX + leftPad, cardY + 26 + 24);
 
   doc.setFont("helvetica", "normal");
   doc.setTextColor(INK_SOFT);
   doc.setFontSize(10);
-  doc.text(`Gerado em ${formatNow()}`, marginX + 18, 14 + 26 + 24 + 16);
+  doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, cardY + 26 + 24 + 16);
 
-  return 14 + headerH + 12; // y de início do conteúdo
+  // Logo no canto superior direito (se existir)
+  if (logoDataUrl) {
+    // Tamanho-alvo do logo (mantendo qualidade/espaco do header)
+    const targetW = 120; // px no contexto jsPDF (pt)
+    const targetH = 36;  // ajuste fino conforme proporção do seu logo
+    const padRight = 18;
+    const padTop = 14;
+
+    const imgX = cardX + cardW - padRight - targetW;
+    const imgY = cardY + padTop;
+
+    try {
+      doc.addImage(logoDataUrl, "PNG", imgX, imgY, targetW, targetH);
+    } catch {
+      // Se falhar, apenas segue sem quebrar
+    }
+  }
+
+  return cardY + headerH + 12; // y de início do conteúdo
 }
 
 function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
@@ -116,10 +158,10 @@ function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
 
 function newPage(
   doc: jsPDF,
-  opts: { title: string; marginX: number; pageW: number; pageH: number }
+  opts: { title: string; marginX: number; pageW: number; pageH: number; logoDataUrl?: string | null }
 ) {
   doc.addPage();
-  const startY = drawHeader(doc, opts.pageW, opts.marginX, opts.title);
+  const startY = drawHeader(doc, opts.pageW, opts.marginX, opts.title, opts.logoDataUrl);
   drawFooter(doc, opts.pageW, opts.pageH, opts.marginX);
   return startY;
 }
@@ -240,6 +282,9 @@ export default function ExportPDFButton({
   const onExport = useCallback(async () => {
     setLoading(true);
     try {
+      // Carrega o logo da pasta /public (Next serve em /logo.png)
+      const logoDataUrl = await fetchAsDataURL("/logo.png");
+
       const options: jsPDFOptions = {
         unit: "pt",
         format: "a4",
@@ -252,7 +297,7 @@ export default function ExportPDFButton({
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
       /* ========= PÁG. 1 — KPIs (centralizados) ========= */
-      let startY = drawHeader(doc, pageW, marginX, title);
+      let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
       const gap = 16;
@@ -299,7 +344,7 @@ export default function ExportPDFButton({
       );
 
       /* ========= PÁG. 2 — No-show ========= */
-      startY = newPage(doc, { title, marginX, pageW, pageH });
+      startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const noShowRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
       const noShowSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]);
@@ -332,7 +377,7 @@ export default function ExportPDFButton({
       drawFooter(doc, pageW, pageH, marginX);
 
       /* ========= PÁG. 3 — Glosas ========= */
-      startY = newPage(doc, { title, marginX, pageW, pageH });
+      startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
       const glosaInterest = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]);
@@ -363,7 +408,7 @@ export default function ExportPDFButton({
       drawFooter(doc, pageW, pageH, marginX);
 
       /* ========= PÁG. 4 — Receitas Digitais ========= */
-      startY = newPage(doc, { title, marginX, pageW, pageH });
+      startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const rxRework = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
       const rxDiff = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]);
@@ -386,12 +431,10 @@ export default function ExportPDFButton({
       drawFooter(doc, pageW, pageH, marginX);
 
       /* ========= PÁG. 5 — Resumo ========= */
-      // Espaço extra entre o cabeçalho e o título "Resumo..." (px)
-      const HEADER_GAP = 28; // aumente/diminua se quiser mais/menos espaço
-      // 14 (offset) + 70 (altura do header card) + 12 (respiro) + HEADER_GAP
+      const HEADER_GAP = 28;
       const tableTopMargin = 14 + 70 + 12 + HEADER_GAP;
 
-      // --- ADIÇÃO: colunas dos detalhes, derivadas das chaves de `answers`
+      // --- colunas dos detalhes, derivadas das chaves de `answers`
       const detailCols =
         answers && answers.length
           ? Array.from(new Set(answers.flatMap((a) => Object.keys(a ?? {})))).map(
@@ -429,11 +472,10 @@ export default function ExportPDFButton({
         margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
         theme: "grid",
         didDrawPage: () => {
-          const sY = drawHeader(doc, pageW, marginX, title);
+          const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
           doc.setFont("helvetica", "bold");
           doc.setTextColor(INK);
           doc.setFontSize(14);
-          // empurra o título para baixo usando o mesmo HEADER_GAP
           doc.text("Resumo consolidado por pergunta", marginX, sY + HEADER_GAP - 10);
           drawFooter(doc, pageW, pageH, marginX);
         },
@@ -460,7 +502,7 @@ export default function ExportPDFButton({
           margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
           theme: "grid",
           didDrawPage: () => {
-            const sY = drawHeader(doc, pageW, marginX, title);
+            const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
             doc.setFont("helvetica", "bold");
             doc.setTextColor(INK);
             doc.setFontSize(14);
@@ -475,10 +517,7 @@ export default function ExportPDFButton({
       }
 
       // === SALVAR O PDF ===
-      const fileName = `Relatorio_NovuSys_${new Date()
-        .toISOString()
-        .slice(0, 19)
-        .replace(/[:T]/g, "-")}.pdf`;
+      const fileName = `Relatorio_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
       doc.save(fileName);
     } finally {
       setLoading(false);
