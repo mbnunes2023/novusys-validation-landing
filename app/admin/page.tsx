@@ -1,8 +1,9 @@
+// app/admin/page.tsx
 "use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../lib/supabaseClient"; // ajuste o caminho se necessário
+import { supabase } from "../../lib/supabaseClient"; // <- caminho corrigido
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -80,4 +81,3 @@ export default function AdminLoginPage() {
     </div>
   );
 }
-
