@@ -326,3 +326,16 @@ html,body{ background:var(--page-bg); }
 }
 /* Oculta o brand-bar só quando a página colocar a classe no <body> */
 .hide-brand-bar .brand-bar { display: none; }
+/* link Admin discreto, canto esquerdo do topo */
+.admin-link{
+  position:absolute; left:16px; top:16px;
+  padding:.45rem .75rem;
+  border:1px solid rgba(15,23,42,.12);
+  border-radius:9999px;
+  background:#fff;
+  color:#0f172a; font-weight:600; font-size:.85rem;
+  box-shadow:0 4px 12px rgba(2,6,23,.06);
+  opacity:.9;
+  transition:transform .12s ease, box-shadow .18s ease, opacity .18s ease;
+}
+.admin-link:hover{ transform:translateY(-1px); box-shadow:0 10px 22px rgba(2,6,23,.08); opacity:1; }
