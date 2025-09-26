@@ -1,4 +1,3 @@
-// app/admin/dashboard/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -30,44 +29,35 @@ type Answer = {
   consent: boolean | null;
 };
 
-/* ===================== Helpers / Cores ===================== */
+/* ===================== Helpers / visual ===================== */
 
 const BRAND_1 = "#1976d2";
-const INK = "#0f172a";
-const INK_SOFT = "#64748b";
 const EDGE = "#e9edf7";
 
-function pct(n: number, d: number) {
-  return d ? Math.round((n / d) * 100) : 0;
-}
 function fmt(n: number) {
   return Intl.NumberFormat("pt-BR").format(n);
+}
+function pct(n: number, d: number) {
+  return d ? Math.round((n / d) * 100) : 0;
 }
 function toDateKey(s: string) {
   const d = new Date(s);
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return `${yyyy}-${mm}-${dd}`; // AAAA-MM-DD
+}
+function isWithinDateOnly(dateISO: string, from?: string | null, to?: string | null) {
+  const key = toDateKey(dateISO); // compara por data, sem fuso
+  if (from && key < from) return false;
+  if (to && key > to) return false;
+  return true;
 }
 function codeFromIndex(i: number) {
   return `R-${String(i + 1).padStart(2, "0")}`;
 }
-function isWithin(dateISO: string, from?: string | null, to?: string | null) {
-  const t = new Date(dateISO).getTime();
-  if (from) {
-    const f = new Date(from).getTime();
-    if (t < f) return false;
-  }
-  if (to) {
-    const end = new Date(to);
-    end.setHours(23, 59, 59, 999);
-    if (t > end.getTime()) return false;
-  }
-  return true;
-}
 
-/* ===================== Micro-Componentes (SVG) ===================== */
+/* ===================== Micro charts (SVG) ===================== */
 
 function Sparkline({ values, width = 120, height = 36 }: { values: number[]; width?: number; height?: number }) {
   if (!values.length) return <svg width={width} height={height} />;
@@ -155,7 +145,7 @@ export default function AdminDashboard() {
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filtros
+  // filtros
   const [quickRange, setQuickRange] = useState<"" | "7D" | "30D" | "90D">("");
   const [fromDate, setFromDate] = useState<string | null>(null);
   const [toDate, setToDate] = useState<string | null>(null);
@@ -163,19 +153,19 @@ export default function AdminDashboard() {
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
   const [selectedCode, setSelectedCode] = useState<string | null>(null); // R-XX
 
-  // refs (compatível com ExportPDFButton)
+  // compatível com ExportPDFButton (não usados visualmente aqui)
   const noshowRef = useRef<HTMLDivElement>(null);
   const glosaRef = useRef<HTMLDivElement>(null);
   const rxRef = useRef<HTMLDivElement>(null);
 
-  // Sessão
+  // autenticação
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (!data.session) router.replace("/admin");
     });
   }, [router]);
 
-  // Carrega dados
+  // carrega dados
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -189,15 +179,17 @@ export default function AdminDashboard() {
     })();
   }, []);
 
-  // Opções dinâmicas
-  const clinicSizes = useMemo(() => {
-    return Array.from(new Set(answers.map(a => (a.clinic_size || "").trim()).filter(Boolean)));
-  }, [answers]);
-  const roles = useMemo(() => {
-    return Array.from(new Set(answers.map(a => (a.doctor_role || "").trim()).filter(Boolean)));
-  }, [answers]);
+  // opções dinâmicas
+  const clinicSizes = useMemo(
+    () => Array.from(new Set(answers.map(a => (a.clinic_size || "").trim()).filter(Boolean))),
+    [answers]
+  );
+  const roles = useMemo(
+    () => Array.from(new Set(answers.map(a => (a.doctor_role || "").trim()).filter(Boolean))),
+    [answers]
+  );
 
-  // Atualiza período rápido
+  // presets de período
   useEffect(() => {
     if (!quickRange) return;
     const today = new Date();
@@ -207,22 +199,16 @@ export default function AdminDashboard() {
     from.setDate(from.getDate() - (days - 1));
     setFromDate(from.toISOString().slice(0, 10));
     setToDate(to);
+    // opcional: limpar demais filtros ao trocar preset
+    // setSizeFilter([]); setRoleFilter([]); setSelectedCode(null);
   }, [quickRange]);
 
-  // Dataset filtrado (multi-filtros + respondente)
+  // dataset filtrado (usa comparação por data, sem fuso)
   const filtered = useMemo(() => {
     let arr = answers;
-    // período
-    arr = arr.filter(a => isWithin(a.created_at, fromDate, toDate));
-    // size
-    if (sizeFilter.length) {
-      arr = arr.filter(a => sizeFilter.includes((a.clinic_size || "").trim()));
-    }
-    // role
-    if (roleFilter.length) {
-      arr = arr.filter(a => roleFilter.includes((a.doctor_role || "").trim()));
-    }
-    // respondente
+    arr = arr.filter(a => isWithinDateOnly(a.created_at, fromDate, toDate));
+    if (sizeFilter.length) arr = arr.filter(a => sizeFilter.includes((a.clinic_size || "").trim()));
+    if (roleFilter.length) arr = arr.filter(a => roleFilter.includes((a.doctor_role || "").trim()));
     if (selectedCode) {
       const idx = parseInt(selectedCode.replace("R-", ""), 10) - 1;
       if (idx >= 0 && idx < answers.length) arr = [answers[idx]];
@@ -230,12 +216,12 @@ export default function AdminDashboard() {
     return arr;
   }, [answers, fromDate, toDate, sizeFilter, roleFilter, selectedCode]);
 
-  /* ===== KPI ===== */
+  // KPIs (filtrados)
   const kpi = useMemo(() => {
     const total = filtered.length;
-    const noshowYes = filtered.filter((a) => a.q_noshow_relevance === "Sim").length;
-    const glosaRec  = filtered.filter((a) => a.q_glosa_is_problem === "Sim").length;
-    const rxRework  = filtered.filter((a) => a.q_rx_rework === "Sim").length;
+    const noshowYes = filtered.filter(a => a.q_noshow_relevance === "Sim").length;
+    const glosaRec  = filtered.filter(a => a.q_glosa_is_problem === "Sim").length;
+    const rxRework  = filtered.filter(a => a.q_rx_rework === "Sim").length;
     return {
       total,
       noshowYesPct: total ? (noshowYes / total) * 100 : 0,
@@ -244,28 +230,28 @@ export default function AdminDashboard() {
     };
   }, [filtered]);
 
-  /* ===== Sparkline (com filtros) ===== */
+  // séries diárias (filtradas)
   const dailySeries = useMemo(() => {
     const map = new Map<string, number>();
-    filtered.forEach((a) => {
+    filtered.forEach(a => {
       const key = toDateKey(a.created_at);
       map.set(key, (map.get(key) || 0) + 1);
     });
     const keys = Array.from(map.keys()).sort();
-    return keys.map((k) => map.get(k) || 0);
+    return keys.map(k => map.get(k) || 0);
   }, [filtered]);
 
-  /* ===== Distribuições ===== */
+  // distribuições (filtradas)
   function dist(field: keyof Answer, options: string[]) {
     const total = filtered.length;
     const counts: Record<string, number> = {};
-    options.forEach((o) => (counts[o] = 0));
-    filtered.forEach((a) => {
+    options.forEach(o => (counts[o] = 0));
+    filtered.forEach(a => {
       const v = (a[field] || "") as string;
       if (options.includes(v)) counts[v] += 1;
     });
-    const rows = options.map((o) => ({ label: o, count: counts[o], pctValue: pct(counts[o], total) }));
-    const maxPct = Math.max(...rows.map((r) => r.pctValue), 1);
+    const rows = options.map(o => ({ label: o, count: counts[o], pctValue: pct(counts[o], total) }));
+    const maxPct = Math.max(...rows.map(r => r.pctValue), 1);
     return { rows, maxPct, total };
   }
 
@@ -285,7 +271,7 @@ export default function AdminDashboard() {
     value:  dist("q_rx_tool_value", ["Sim", "Não", "Talvez"]),
   };
 
-  /* ===== Resumo para PDF (mantém TODOS os dados) ===== */
+  // summaryRows para o PDF (usando filtrado)
   const summaryRows = useMemo(() => {
     const count = (arr: any[], field: keyof Answer) =>
       arr.reduce<Record<string, number>>((acc, r) => {
@@ -294,44 +280,42 @@ export default function AdminDashboard() {
         return acc;
       }, {});
     return [
-      { pergunta: "No-show relevante?",           ...count(answers, "q_noshow_relevance") },
-      { pergunta: "Sistema p/ no-show?",          ...count(answers, "q_noshow_has_system") },
-      { pergunta: "Impacto financeiro",           ...count(answers, "q_noshow_financial_impact") },
-      { pergunta: "Glosas recorrentes?",          ...count(answers, "q_glosa_is_problem") },
-      { pergunta: "Checagem antes do envio",      ...count(answers, "q_glosa_interest") },
-      { pergunta: "Quem sofre mais",              ...count(answers, "q_glosa_who_suffers") },
-      { pergunta: "Receitas geram retrabalho?",   ...count(answers, "q_rx_rework") },
-      { pergunta: "Pacientes têm dificuldade?",   ...count(answers, "q_rx_elderly_difficulty") },
-      { pergunta: "Valor em ferramenta de apoio", ...count(answers, "q_rx_tool_value") },
+      { pergunta: "No-show relevante?",           ...count(filtered, "q_noshow_relevance") },
+      { pergunta: "Sistema p/ no-show?",          ...count(filtered, "q_noshow_has_system") },
+      { pergunta: "Impacto financeiro",           ...count(filtered, "q_noshow_financial_impact") },
+      { pergunta: "Glosas recorrentes?",          ...count(filtered, "q_glosa_is_problem") },
+      { pergunta: "Checagem antes do envio",      ...count(filtered, "q_glosa_interest") },
+      { pergunta: "Quem sofre mais",              ...count(filtered, "q_glosa_who_suffers") },
+      { pergunta: "Receitas geram retrabalho?",   ...count(filtered, "q_rx_rework") },
+      { pergunta: "Pacientes têm dificuldade?",   ...count(filtered, "q_rx_elderly_difficulty") },
+      { pergunta: "Valor em ferramenta de apoio", ...count(filtered, "q_rx_tool_value") },
     ];
-  }, [answers]);
+  }, [filtered]);
 
-  /* ===== Comentários & Identificação (base completa) ===== */
+  // comentários & identificação (base completa – e clicáveis para filtrar)
   const comments = useMemo(
     () =>
       answers
         .map((a, i) => ({ code: codeFromIndex(i), text: (a.comments || "").toString().trim() }))
-        .filter((c) => c.text.length),
+        .filter(c => c.text.length),
     [answers]
   );
-
   const idRows = useMemo(
     () =>
       answers
-        .filter((a) => a.consent_contact === true || a.consent === true)
+        .filter(a => a.consent_contact === true || a.consent === true)
         .map((a, i) => ({
           code: codeFromIndex(i),
           nome: (a.doctor_name || "").toString().trim() || "—",
           crm: (a.crm || "").toString().trim() || "—",
           contato: (a.contact || "").toString().trim() || "—",
         }))
-        .filter((r) => r.nome !== "—" || r.crm !== "—" || r.contato !== "—"),
+        .filter(r => r.nome !== "—" || r.crm !== "—" || r.contato !== "—"),
     [answers]
   );
 
-  /* ===== UI Helpers ===== */
   function toggleIn(setter: (v: string[]) => void, arr: string[], value: string) {
-    setter(arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value]);
+    setter(arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value]);
   }
   function resetFilters() {
     setQuickRange("");
@@ -345,33 +329,28 @@ export default function AdminDashboard() {
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-6 py-10">
-        <div className="card">Carregando…</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">Carregando…</div>
       </div>
     );
   }
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
-      {/* Header com Export PDF */}
+      {/* Header / Export */}
       <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <ExportPDFButton
-          kpi={{
-            total: answers.length,
-            noshowYesPct: answers.length ? (answers.filter(a => a.q_noshow_relevance === "Sim").length / answers.length) * 100 : 0,
-            glosaRecorrentePct: answers.length ? (answers.filter(a => a.q_glosa_is_problem === "Sim").length / answers.length) * 100 : 0,
-            rxReworkPct: answers.length ? (answers.filter(a => a.q_rx_rework === "Sim").length / answers.length) * 100 : 0,
-          }}
+          kpi={kpi}
           summaryRows={summaryRows}
-          answers={answers}
+          answers={filtered}             // <<< exporta o dataset FILTRADO
           chartRefs={{ noshowRef, glosaRef, rxRef }}
         />
       </div>
 
-      {/* ===== Filtros Premium ===== */}
+      {/* Filtros */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col lg:flex-row gap-4 lg:items-end lg:justify-between">
-          {/* Bloco 1: Período rápido */}
+          {/* Período rápido */}
           <div className="space-y-2">
             <div className="text-xs font-semibold text-slate-600">Período rápido</div>
             <div className="flex gap-2">
@@ -396,7 +375,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Bloco 2: Intervalo custom */}
+          {/* Intervalo custom */}
           <div className="space-y-2">
             <div className="text-xs font-semibold text-slate-600">Intervalo custom</div>
             <div className="flex items-center gap-2">
@@ -416,7 +395,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Bloco 3: Tamanho da clínica (chips multi) */}
+          {/* Tamanho da clínica */}
           <div className="space-y-2">
             <div className="text-xs font-semibold text-slate-600">Tamanho da clínica</div>
             <div className="flex flex-wrap gap-2 max-w-[520px]">
@@ -437,7 +416,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Bloco 4: Cargo (chips multi) */}
+          {/* Cargo */}
           <div className="space-y-2">
             <div className="text-xs font-semibold text-slate-600">Cargo</div>
             <div className="flex flex-wrap gap-2 max-w-[420px]">
@@ -458,7 +437,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Bloco 5: Respondente R-XX */}
+          {/* Respondente */}
           <div className="space-y-2">
             <div className="text-xs font-semibold text-slate-600">Respondente</div>
             <div className="flex items-center gap-2">
@@ -499,7 +478,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ===== KPIs ===== */}
+      {/* KPIs */}
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-sm font-semibold text-slate-900">Total de respostas (após filtros)</div>
@@ -534,7 +513,7 @@ export default function AdminDashboard() {
         </div>
       </section>
 
-      {/* ===== Seções analíticas ===== */}
+      {/* Seções analíticas */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* No-show */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" ref={noshowRef}>
@@ -614,7 +593,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Comentários (clicável para filtrar por R-XX) */}
+        {/* Comentários */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-lg font-bold">Comentários (texto livre)</div>
           {comments.length === 0 ? (
@@ -628,9 +607,7 @@ export default function AdminDashboard() {
                     key={c.code}
                     onClick={() => setSelectedCode(active ? null : c.code)}
                     className={`cursor-pointer rounded-xl border p-3 transition ${
-                      active
-                        ? "border-[var(--brand-1)] bg-blue-50"
-                        : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+                      active ? "border-[var(--brand-1)] bg-blue-50" : "border-slate-200 bg-slate-50 hover:bg-slate-100"
                     }`}
                   >
                     <div className="text-xs font-semibold text-slate-500">{c.code}</div>
@@ -642,7 +619,7 @@ export default function AdminDashboard() {
           )}
         </div>
 
-        {/* Identificação (clicável para filtrar) */}
+        {/* Identificação */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="text-lg font-bold">Identificação (com consentimento)</div>
           {idRows.length === 0 ? (
