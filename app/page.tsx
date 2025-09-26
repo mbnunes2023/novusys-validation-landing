@@ -43,7 +43,7 @@ export default function Page() {
     gradient: "linear-gradient(135deg,#1976d2 0%,#6a11cb 50%,#2575fc 100%)",
   };
 
-  // controla a exibição do formulário
+  /* ------------ Controle de exibição do formulário ------------ */
   const [showForm, setShowForm] = useState(false);
   const formRef = useRef<HTMLDivElement | null>(null);
 
@@ -57,7 +57,7 @@ export default function Page() {
     }
   }, []);
 
-  // estado do formulário
+  /* -------------------- Estado do formulário ------------------- */
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +87,7 @@ export default function Page() {
     consent: false,
   });
 
-  // (mantido para eventuais métricas futuras; não exibimos mais o gráfico)
+  /* Mantido para uso futuro. Não mostramos gráfico neste fluxo. */
   const [stats, setStats] = useState<{ name: string; value: number }[]>([]);
   useEffect(() => {
     const fetchStats = async () => {
@@ -111,6 +111,16 @@ export default function Page() {
       }
     };
     if (submitted) fetchStats();
+  }, [submitted]);
+
+  /* Esconde/mostra a brand-bar conforme a tela de obrigado */
+  useEffect(() => {
+    if (submitted) {
+      document.body.classList.add("hide-brand-bar");
+    } else {
+      document.body.classList.remove("hide-brand-bar");
+    }
+    return () => document.body.classList.remove("hide-brand-bar");
   }, [submitted]);
 
   const canSubmit = useMemo(() => {
@@ -191,14 +201,8 @@ export default function Page() {
     </div>
   );
 
-    /* ========= TELA DE AGRADECIMENTO — CARD PREMIUM ========= */
+  /* ========= TELA DE AGRADECIMENTO — CARD PREMIUM ========= */
   if (submitted) {
-    // Esconde a faixa branca com logo gigante enquanto esta tela estiver ativa
-    useEffect(() => {
-      document.body.classList.add("hide-brand-bar");
-      return () => document.body.classList.remove("hide-brand-bar");
-    }, []);
-
     return (
       <div className="min-h-screen bg-[var(--page-bg)] flex items-center justify-center px-6 py-12">
         <div className="card w-full max-w-2xl text-center">
@@ -207,16 +211,13 @@ export default function Page() {
             alt="NovuSys"
             className="mx-auto w-24 h-24 rounded-xl shadow-sm"
           />
-
           <h1 className="mt-4 text-3xl md:text-4xl font-extrabold">
             Obrigado pela resposta!
           </h1>
-
           <p className="mt-2 text-slate-600">
             Sua contribuição ajuda a priorizar um MVP útil para clínicas e consultórios.
           </p>
 
-          {/* divisor suave, igual aos cards do formulário */}
           <div className="mt-6 h-px bg-[linear-gradient(90deg,transparent,#e9edf7,transparent)]" />
 
           <p className="mt-6 text-xs text-slate-500">
@@ -227,7 +228,6 @@ export default function Page() {
       </div>
     );
   }
-
 
   /* ================= PÁGINA (HERO + FORM) ================= */
   return (
@@ -251,7 +251,10 @@ export default function Page() {
               onClick={() => {
                 setShowForm(true);
                 setTimeout(() => {
-                  formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  formRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
                 }, 30);
               }}
             >
@@ -312,7 +315,9 @@ export default function Page() {
                     type="checkbox"
                     className="mt-1 w-4 h-4"
                     checked={form.consent_contact}
-                    onChange={(e) => onChange("consent_contact", e.target.checked)}
+                    onChange={(e) =>
+                      onChange("consent_contact", e.target.checked)
+                    }
                   />
                   <span>
                     Autorizo contato para falar sobre pilotos/entrevistas (opcional).
@@ -552,4 +557,3 @@ export default function Page() {
     </div>
   );
 }
-
