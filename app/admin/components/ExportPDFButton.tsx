@@ -593,7 +593,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [answers, kpi, summaryRows]);
+  }, [answers, kpi]);
 
   return (
     <button
