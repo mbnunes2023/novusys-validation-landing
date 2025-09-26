@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useCallback } from "react";
-import type React from "react"; // <- para os tipos de RefObject
+import type React from "react"; // para os tipos de RefObject
 import jsPDF, { jsPDFOptions } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -18,7 +18,7 @@ type KPI = {
 
 type Answer = Record<string, any>;
 
-// <-- ADIÇÃO: chartRefs fica opcional e é ignorado no código
+// chartRefs segue opcional e ignorado no código
 type Props = {
   kpi: KPI;
   summaryRows: Array<Record<string, number | string>>;
@@ -108,26 +108,28 @@ function drawHeader(
   doc.setLineWidth(1);
   doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
 
-  // (REMOVIDO) “NovuSys” tipográfico
-  // Desenha somente Título + data (lado esquerdo)
+  // Título + data (lado esquerdo) — título um pouco mais alto e com mais espaço até a data
   const leftPad = 18;
+  const titleY = cardY + 26 + 20; // antes era +24; subimos ~4pt
+  const DATE_GAP = 22; // antes 16; mais espaço entre título e data
+
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(18);
-  doc.text(title, cardX + leftPad, cardY + 26 + 24);
+  doc.text(title, cardX + leftPad, titleY);
 
   doc.setFont("helvetica", "normal");
   doc.setTextColor(INK_SOFT);
   doc.setFontSize(10);
-  doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, cardY + 26 + 24 + 16);
+  doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, titleY + DATE_GAP);
 
   // Logo no canto superior direito (se existir)
   if (logoDataUrl) {
-    // Tamanho-alvo do logo (mantendo qualidade/espaco do header)
-    const targetW = 120; // px no contexto jsPDF (pt)
-    const targetH = 36;  // ajuste fino conforme proporção do seu logo
+    // Logo maior
+    const targetW = 160; // largura
+    const targetH = 48;  // altura
     const padRight = 18;
-    const padTop = 14;
+    const padTop = 10;
 
     const imgX = cardX + cardW - padRight - targetW;
     const imgY = cardY + padTop;
@@ -135,7 +137,7 @@ function drawHeader(
     try {
       doc.addImage(logoDataUrl, "PNG", imgX, imgY, targetW, targetH);
     } catch {
-      // Se falhar, apenas segue sem quebrar
+      // se falhar, apenas não desenha
     }
   }
 
@@ -275,7 +277,7 @@ export default function ExportPDFButton({
   kpi,
   summaryRows,
   answers,
-  chartRefs, // <- mantido apenas para compatibilidade; não é usado
+  chartRefs, // mantido apenas para compatibilidade; não é usado
 }: Props) {
   const [loading, setLoading] = useState(false);
 
@@ -434,7 +436,7 @@ export default function ExportPDFButton({
       const HEADER_GAP = 28;
       const tableTopMargin = 14 + 70 + 12 + HEADER_GAP;
 
-      // --- colunas dos detalhes, derivadas das chaves de `answers`
+      // colunas dos detalhes, derivadas das chaves de `answers`
       const detailCols =
         answers && answers.length
           ? Array.from(new Set(answers.flatMap((a) => Object.keys(a ?? {})))).map(
