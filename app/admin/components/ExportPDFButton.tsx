@@ -132,7 +132,7 @@ function drawHeader(
 }
 
 function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
-  const left = `Relatório gerado automaticamente`;
+  const left = "Relatório gerado automaticamente";
   const right = `p. ${doc.getCurrentPageInfo().pageNumber}`;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
@@ -180,7 +180,7 @@ function drawKpiCard(
   doc.text(value, x + 16, y + 58);
 }
 
-/* ===================== Micro-charts helpers (padrão) ===================== */
+/* ===================== Micro-charts helpers ===================== */
 
 type DistItem = { label: string; count: number; pct: string };
 const ROW_H = 20;
@@ -254,13 +254,13 @@ function drawBarBlock(
   return y + filtered.length * (ROW_H + ROW_GAP);
 }
 
-/* ===================== Versão compacta para caber tudo na pág. 2 ===================== */
+/* ======== Versão compacta para caber tudo na Página 2 ======== */
 
-const CROW_H = 14;  // altura barra compacta
+const CROW_H = 14;  // altura da barra compacta
 const CROW_GAP = 4;
 
 function measureBarBlockCompact(lines: number) {
-  return 7 + lines * (CROW_H + CROW_GAP) + 2; // título(7) + linhas + respiro
+  return 7 + lines * (CROW_H + CROW_GAP) + 2; // título + linhas + respiro
 }
 
 function drawBarBlockCompact(
@@ -271,6 +271,7 @@ function drawBarBlockCompact(
   y: number,
   width: number
 ) {
+  // título compacto
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(12);
@@ -337,4 +338,339 @@ const HEADER_MAP: Record<string, string> = {
 
 const QUESTIONS: Array<{ key: keyof Answer; label: string; options: string[] }> = [
   { key: "q_noshow_relevance", label: "No-show relevante?", options: ["Sim", "Não", "Parcialmente"] },
-  { key: "q_noshow_has_system", label: "Sistema p/ no-show?", options: ["Sim", "
+  { key: "q_noshow_has_system", label: "Sistema p/ no-show?", options: ["Sim", "Não"] },
+  { key: "q_noshow_financial_impact", label: "Impacto financeiro", options: ["Baixo impacto", "Médio impacto", "Alto impacto"] },
+  { key: "q_glosa_is_problem", label: "Glosas recorrentes?", options: ["Sim", "Não", "Às vezes"] },
+  { key: "q_glosa_interest", label: "Checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
+  { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
+  { key: "q_rx_rework", label: "Receitas geram retrabalho?", options: ["Sim", "Não", "Raramente"] },
+  { key: "q_rx_elderly_difficulty", label: "Pacientes têm dificuldade?", options: ["Sim", "Não", "Em parte"] },
+  { key: "q_rx_tool_value", label: "Valor em ferramenta de apoio", options: ["Sim", "Não", "Talvez"] },
+];
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/* ===================== Componente ===================== */
+
+export default function ExportPDFButton({ kpi, answers }: Props) {
+  const [loading, setLoading] = useState(false);
+
+  const onExport = useCallback(async () => {
+    setLoading(true);
+    try {
+      const logoDataUrl = await fetchAsDataURL("/logo.png");
+
+      const options: jsPDFOptions = { unit: "pt", format: "a4", orientation: "landscape" };
+      const doc = new jsPDF(options);
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const marginX = 48;
+      const title = "Relatório da Pesquisa — Clínicas e Consultórios";
+
+      /* ========= PÁGINA 1: Sumário (card dinâmico) + Resumo Executivo (card dinâmico) ========= */
+      let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+      drawFooter(doc, pageW, pageH, marginX);
+
+      const CARD_W = pageW - marginX * 2;
+      const PAD_X = 18;
+      const TITLE_GAP = 26;
+      const LINE = 18;
+
+      // SUMÁRIO
+      const tocItems = [
+        "Visão Geral (KPIs + distribuições)",
+        "Resumo consolidado",
+        "Respostas detalhadas",
+      ];
+
+      const summaryTitleH = 16;
+      const summaryListH = tocItems.length * LINE;
+      const summaryPadBottom = 20;
+      const summaryCardH = TITLE_GAP + summaryTitleH + 8 + summaryListH + summaryPadBottom;
+
+      if (startY + summaryCardH > pageH - 60) {
+        startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      }
+
+      let y = startY;
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, y, CARD_W, summaryCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(16);
+      doc.text("Sumário", marginX + PAD_X, y + TITLE_GAP);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK_SOFT);
+      doc.setFontSize(12);
+
+      let listY = y + TITLE_GAP + summaryTitleH + 8;
+      tocItems.forEach((label, i) => {
+        doc.text(`${i + 1}. ${label}`, marginX + PAD_X, listY, {
+          maxWidth: CARD_W - PAD_X * 2,
+        });
+        listY += LINE;
+      });
+
+      // RESUMO EXECUTIVO
+      const bullets = [
+        `Amostra consolidada: ${kpi.total} respostas.`,
+        `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
+          0
+        )}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
+        "Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.",
+      ];
+
+      const reTitleH = 14;
+      const bulletsH = bullets.length * LINE;
+      const rePadBottom = 24;
+      const reCardH = TITLE_GAP + reTitleH + 8 + bulletsH + rePadBottom;
+
+      const gapBetweenCards = 20;
+      let reTop = y + summaryCardH + gapBetweenCards;
+
+      if (reTop + reCardH > pageH - 60) {
+        reTop = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      }
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, reTop, CARD_W, reCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Resumo Executivo — Principais insights", marginX + PAD_X, reTop + TITLE_GAP);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(12);
+
+      let by = reTop + TITLE_GAP + reTitleH + 8;
+      const maxW = CARD_W - PAD_X * 2;
+      bullets.forEach((line) => {
+        doc.circle(marginX + PAD_X, by - 3, 2, "F");
+        doc.text(line, marginX + PAD_X + 10, by, { maxWidth: maxW - 10 });
+        by += LINE;
+      });
+
+      /* ========= PÁGINA 2: Visão Geral (KPIs + blocos compactos 3×3) ========= */
+      startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+
+      const gap = 16;
+      const kpiCardW = (pageW - marginX * 2 - gap * 3) / 4;
+      const kpiCardH = 82;
+
+      // Título
+      let kpiY = startY;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Visão Geral", marginX, kpiY + 2);
+      kpiY += 14;
+
+      // KPIs
+      drawKpiCard(doc, marginX + 0 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "Total de respostas", `${kpi.total}`, ACCENT);
+      drawKpiCard(doc, marginX + 1 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
+
+      // Distribuições compactas (3×3)
+      let gridTop = kpiY + kpiCardH + 24;
+
+      const nsRelev  = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items;
+      const nsSys    = dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items;
+      const nsImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]).items;
+
+      const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items;
+      const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items;
+      const gWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]).items;
+
+      const rxRw  = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]).items;
+      const rxDif = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]).items;
+      const rxVal = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]).items;
+
+      const blocks: Array<{ title: string; items: DistItem[] }> = [
+        { title: "No-show — Relevância",                 items: nsRelev },
+        { title: "No-show — Sistema que resolve",        items: nsSys },
+        { title: "No-show — Impacto financeiro mensal",  items: nsImpact },
+        { title: "Glosas — Recorrência",                 items: gRec },
+        { title: "Glosas — Checagem antes do envio",     items: gInt },
+        { title: "Glosas — Quem sofre mais",             items: gWho },
+        { title: "Receitas — Geram retrabalho",          items: rxRw },
+        { title: "Receitas — Dificuldade dos pacientes", items: rxDif },
+        { title: "Receitas — Valor em ferramenta",       items: rxVal },
+      ];
+
+      const COLS = 3;
+      const COL_GAP = 18;
+      const COL_W = (pageW - marginX * 2 - COL_GAP * (COLS - 1)) / COLS;
+
+      let x = marginX;
+      let yCompact = gridTop;
+
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        const h = measureBarBlockCompact(b.items.length);
+
+        if (yCompact + h > pageH - 60) {
+          // quebra e continua com título
+          startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(INK);
+          doc.setFontSize(14);
+          doc.text("Visão Geral — Distribuições compactas", marginX, startY + 2);
+          yCompact = startY + 14;
+          x = marginX;
+        }
+
+        drawBarBlockCompact(doc, b.title, b.items, x, yCompact, COL_W);
+
+        const col = i % COLS;
+        if (col === COLS - 1) {
+          x = marginX;
+          yCompact += Math.max(h, 74); // passo vertical confortável
+        } else {
+          x += COL_W + COL_GAP;
+        }
+      }
+
+      drawFooter(doc, pageW, pageH, marginX);
+
+      /* ========= PÁG. 3+ — Resumo consolidado (subtabelas por pergunta) ========= */
+      const HEADER_GAP = 28;
+      const tableTopMargin = 14 + 72 + 12 + HEADER_GAP + TOP_GAP;
+
+      doc.addPage();
+      const drawSectionHeader = () => {
+        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text("Resumo consolidado por pergunta", marginX, sY + HEADER_GAP - 10);
+        drawFooter(doc, pageW, pageH, marginX);
+      };
+      drawSectionHeader();
+
+      let nextStartY = tableTopMargin;
+
+      for (const q of QUESTIONS) {
+        const { items, answered, unknownCount } = dist(answers, q.key, q.options);
+        const body = items.filter((it) => it.count > 0).map((it) => ({ opcao: it.label, qtde: it.count, pct: it.pct }));
+        if (answered === 0 && unknownCount === 0) continue;
+
+        if (nextStartY > pageH - 200) {
+          doc.addPage();
+          drawSectionHeader();
+          nextStartY = tableTopMargin;
+        }
+
+        autoTable(doc as any, {
+          startY: nextStartY,
+          styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+          headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+          body: body.length ? body : [{ opcao: "—", qtde: 0, pct: "0%" }],
+          columns: [
+            { header: q.label, dataKey: "opcao" },
+            { header: "Qtde", dataKey: "qtde" },
+            { header: "% (entre respondentes)", dataKey: "pct" },
+          ],
+          columnStyles: {
+            opcao: { cellWidth: 300, overflow: "linebreak" },
+            qtde: { cellWidth: 60, halign: "right" },
+            pct:  { cellWidth: 160, halign: "right" },
+          },
+          tableWidth: pageW - marginX * 2,
+          margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
+          theme: "grid",
+          rowPageBreak: "auto",
+          foot: [[`Não respondido: ${unknownCount} (${((unknownCount / answers.length) * 100 || 0).toFixed(0)}% do total)`, "", ""]],
+          footStyles: { fontSize: 9, textColor: INK_SOFT },
+          didDrawPage: () => drawSectionHeader(),
+        });
+
+        nextStartY = (doc as any).lastAutoTable.finalY + 28;
+      }
+
+      /* ========= PÁG. N — Respostas detalhadas (curadas + chunk) ========= */
+      const allKeys = answers.length ? Array.from(new Set(answers.flatMap((a) => Object.keys(a ?? {})))) : [];
+      const questionKeys = allKeys.filter((k) => k.startsWith("q_") && !SENSITIVE_KEYS.has(k));
+      const includeComments = allKeys.includes("comments") && !SENSITIVE_KEYS.has("comments");
+
+      const groups = chunk(questionKeys, 6);
+      if (includeComments && groups.length) groups[groups.length - 1].push("comments");
+      else if (includeComments) groups.push(["comments"]);
+
+      const detailTitle = "Respostas detalhadas (sem identificação sensível)";
+      for (let gi = 0; gi < groups.length; gi++) {
+        const cols = groups[gi];
+        const detailCols = cols.map((k) => ({ header: HEADER_MAP[k] ?? k, dataKey: k }));
+        const detailBody = answers.map((a) => {
+          const row: Record<string, any> = {};
+          cols.forEach((k) => {
+            let v = (a as any)[k];
+            if (typeof v === "boolean") v = v ? "Sim" : "Não";
+            if (v == null || v === "") v = "—";
+            row[k] = v;
+          });
+          return row;
+        });
+
+        const colStyles: Record<string, any> = {};
+        cols.forEach((k) => {
+          colStyles[k] = { cellWidth: k === "comments" ? 260 : 120, overflow: "linebreak" };
+        });
+
+        doc.addPage();
+        autoTable(doc as any, {
+          styles: { font: "helvetica", fontSize: 9, textColor: INK, cellPadding: 5, lineColor: CARD_EDGE },
+          headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold", valign: "middle" },
+          body: detailBody,
+          columns: detailCols,
+          columnStyles: colStyles,
+          tableWidth: pageW - marginX * 2,
+          margin: { left: marginX, right: marginX, top: 14 + 72 + 12 + 28 + TOP_GAP, bottom: 26 },
+          theme: "grid",
+          rowPageBreak: "auto",
+          didDrawPage: () => {
+            const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(14);
+            const suffix = groups.length > 1 ? ` — parte ${gi + 1}/${groups.length}` : "";
+            doc.text(detailTitle + suffix, marginX, sY + 28 - 10);
+            drawFooter(doc, pageW, pageH, marginX);
+          },
+        });
+      }
+
+      // salvar
+      const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
+      doc.save(fileName);
+    } finally {
+      setLoading(false);
+    }
+  }, [answers, kpi]); // sem summaryRows
+
+  return (
+    <button
+      type="button"
+      onClick={onExport}
+      disabled={loading}
+      aria-busy={loading}
+      className="inline-flex items-center rounded-xl px-4 py-2 font-medium text-white disabled:opacity-60"
+      style={{
+        background: "linear-gradient(90deg, #1976d2, #2575fc)",
+        boxShadow: "0 6px 16px rgba(25,118,210,.25)",
+      }}
+    >
+      {loading ? "Gerando PDF..." : "Exportar PDF (apresentação)"}
+    </button>
+  );
+}
