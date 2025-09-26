@@ -20,7 +20,7 @@ type Answer = Record<string, any>;
 
 type Props = {
   kpi: KPI;
-  summaryRows: Array<Record<string, number | string>>;
+  summaryRows: Array<Record<string, number | string>>; // mantido para compatibilidade
   answers: Answer[];
   chartRefs?: {
     noshowRef: React.RefObject<HTMLDivElement>;
@@ -41,10 +41,7 @@ const CARD_EDGE = "#e9edf7";
 
 function formatNow(): string {
   const d = new Date();
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(d);
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(d);
 }
 
 function usableHeight(startY: number, pageH: number, bottomPadding = 40) {
@@ -56,7 +53,7 @@ function centeredStartY(startY: number, pageH: number, blockH: number) {
   return startY + offset;
 }
 
-// carrega /logo.png como DataURL
+// /public/logo.png -> DataURL
 async function fetchAsDataURL(path: string): Promise<string | null> {
   try {
     const res = await fetch(path);
@@ -74,7 +71,7 @@ async function fetchAsDataURL(path: string): Promise<string | null> {
 
 /* ===================== Cabeçalho/Rodapé ===================== */
 
-const TOP_GAP = 24; // respiro extra após o header em todas as páginas
+const TOP_GAP = 24; // respiro após header
 
 function drawHeader(
   doc: jsPDF,
@@ -98,7 +95,7 @@ function drawHeader(
   doc.setLineWidth(1);
   doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
 
-  // alinhar verticalmente texto e logo dentro do card
+  // centralização vertical
   const centerY = cardY + headerH / 2;
 
   // bloco texto (esquerda)
@@ -110,7 +107,7 @@ function drawHeader(
   const dateH = 10; // approx
   const lineGap = 6;
   const textBlockH = titleH + lineGap + dateH;
-  const titleY = centerY - textBlockH / 2 + titleH * 0.75; // baseline aproximada
+  const titleY = centerY - textBlockH / 2 + titleH * 0.75;
 
   doc.text(title, cardX + leftPad, titleY);
 
@@ -131,7 +128,7 @@ function drawHeader(
     } catch {}
   }
 
-  return cardY + headerH + 12 + TOP_GAP; // início do conteúdo com respiro
+  return cardY + headerH + 12 + TOP_GAP;
 }
 
 function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
@@ -319,23 +316,16 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁGINA 1: Sumário (card) + Resumo Executivo (card) ========= */
+      /* ========= PÁGINA 1: Sumário (card dinâmico) + Resumo Executivo (card dinâmico) ========= */
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
-      // Card do Sumário
-      const cardW = pageW - marginX * 2;
-      let y = startY;
+      const CARD_W = pageW - marginX * 2;
+      const PAD_X = 18;
+      const TITLE_GAP = 26;
+      const LINE = 18;
 
-      doc.setDrawColor(CARD_EDGE);
-      doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, y, cardW, 140, 12, 12, "FD");
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(16);
-      doc.text("Sumário", marginX + 18, y + 26);
-
+      // SUMÁRIO
       const tocItems = [
         "Visão Geral (KPIs)",
         "No-show",
@@ -345,32 +335,38 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         "Respostas detalhadas",
       ];
 
+      const summaryTitleH = 16;
+      const summaryListH = tocItems.length * LINE;
+      const summaryPadBottom = 20;
+      const summaryCardH = TITLE_GAP + summaryTitleH + 8 + summaryListH + summaryPadBottom;
+
+      if (startY + summaryCardH > pageH - 60) {
+        startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      }
+
+      let y = startY;
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, y, CARD_W, summaryCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(16);
+      doc.text("Sumário", marginX + PAD_X, y + TITLE_GAP);
+
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK_SOFT);
       doc.setFontSize(12);
 
-      let ly = y + 50;
+      let listY = y + TITLE_GAP + summaryTitleH + 8;
       tocItems.forEach((label, i) => {
-        doc.text(`${i + 1}. ${label}`, marginX + 18, ly);
-        ly += 18;
+        doc.text(`${i + 1}. ${label}`, marginX + PAD_X, listY, {
+          maxWidth: CARD_W - PAD_X * 2,
+        });
+        listY += LINE;
       });
 
-      // Card do Resumo Executivo
-      const resBoxTop = y + 160;
-      const resBoxH = 120;
-      doc.setDrawColor(CARD_EDGE);
-      doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, resBoxTop, cardW, resBoxH, 12, 12, "FD");
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(14);
-      doc.text("Resumo Executivo — Principais insights", marginX + 18, resBoxTop + 24);
-
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK);
-      doc.setFontSize(12);
-
+      // RESUMO EXECUTIVO
       const bullets = [
         `Amostra consolidada: ${kpi.total} respostas.`,
         `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
@@ -378,21 +374,47 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         )}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
         `Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.`,
       ];
-      let by = resBoxTop + 46;
-      const maxW = cardW - 36;
+
+      const reTitleH = 14;
+      const bulletsH = bullets.length * LINE;
+      const rePadBottom = 24;
+      const reCardH = TITLE_GAP + reTitleH + 8 + bulletsH + rePadBottom;
+
+      const gapBetweenCards = 20;
+      let reTop = y + summaryCardH + gapBetweenCards;
+
+      if (reTop + reCardH > pageH - 60) {
+        reTop = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      }
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, reTop, CARD_W, reCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Resumo Executivo — Principais insights", marginX + PAD_X, reTop + TITLE_GAP);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(12);
+
+      let by = reTop + TITLE_GAP + reTitleH + 8;
+      const maxW = CARD_W - PAD_X * 2;
       bullets.forEach((line) => {
-        doc.circle(marginX + 18, by - 3, 2, "F");
-        doc.text(line, marginX + 28, by, { maxWidth: maxW });
-        by += 20;
+        doc.circle(marginX + PAD_X, by - 3, 2, "F");
+        doc.text(line, marginX + PAD_X + 10, by, { maxWidth: maxW - 10 });
+        by += LINE;
       });
 
-      /* ========= PÁGINA 2: Visão Geral (KPIs) ========= */
+      /* ========= PÁGINA 2: Visão Geral (somente KPIs) ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
       const gap = 16;
       const kpiCardW = (pageW - marginX * 2 - gap * 3) / 4;
       const kpiCardH = 82;
 
-      let kpiY = centeredStartY(startY, pageH, 14 + kpiCardH); // centraliza bloco
+      let kpiY = centeredStartY(startY, pageH, 14 + kpiCardH);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
@@ -521,13 +543,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
           margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
           theme: "grid",
           rowPageBreak: "auto",
-          foot: [
-            [
-              `Não respondido: ${unknownCount} (${((unknownCount / answers.length) * 100 || 0).toFixed(0)}% do total)`,
-              "",
-              "",
-            ],
-          ],
+          foot: [[`Não respondido: ${unknownCount} (${((unknownCount / answers.length) * 100 || 0).toFixed(0)}% do total)`, "", ""]],
           footStyles: { fontSize: 9, textColor: INK_SOFT },
           didDrawPage: () => drawSectionHeader(),
         });
@@ -593,7 +609,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [answers, kpi]);
+  }, [answers, kpi]); // sem summaryRows
 
   return (
     <button
