@@ -21,11 +21,6 @@ type Props = {
   kpi: KPI;
   summaryRows: Array<Record<string, number | string>>;
   answers: Answer[];
-  chartRefs?: {
-    noshowRef: React.RefObject<HTMLDivElement>;
-    glosaRef: React.RefObject<HTMLDivElement>;
-    rxRef: React.RefObject<HTMLDivElement>;
-  };
 };
 
 /* ===================== Paleta / branding ===================== */
@@ -52,6 +47,18 @@ function percent(part: number, total: number) {
   return `${Math.round((part / total) * 100)}%`;
 }
 
+/** devolve a altura útil entre topo do conteúdo e rodapé */
+function usableHeight(startY: number, pageH: number, bottomPadding = 40) {
+  return Math.max(0, pageH - bottomPadding - startY);
+}
+
+/** centraliza verticalmente um bloco de altura `blockH` dentro do espaço útil */
+function centeredStartY(startY: number, pageH: number, blockH: number) {
+  const avail = usableHeight(startY, pageH);
+  const offset = Math.max(0, (avail - blockH) / 2);
+  return startY + offset;
+}
+
 /* ===================== Cabeçalho/Rodapé ===================== */
 
 function drawHeader(doc: jsPDF, pageW: number, marginX: number, title: string) {
@@ -66,7 +73,7 @@ function drawHeader(doc: jsPDF, pageW: number, marginX: number, title: string) {
   doc.setLineWidth(1);
   doc.roundedRect(marginX, 14, pageW - marginX * 2, headerH, 10, 10, "FD");
 
-  // “Logo” tipográfico (estável, sem imagem externa)
+  // “Logo” tipográfico (estável)
   doc.setFont("helvetica", "bold");
   doc.setTextColor(BRAND_BLUE);
   doc.setFontSize(22);
@@ -139,6 +146,15 @@ function drawKpiCard(
 
 type DistItem = { label: string; count: number; pct: string };
 
+const ROW_H = 20;
+const ROW_GAP = 6;
+
+/** mede a altura de um bloco de barras dado o nº de linhas */
+function measureBarBlock(lines: number) {
+  // título (8) + cada linha (ROW_H + ROW_GAP)
+  return 8 + lines * (ROW_H + ROW_GAP);
+}
+
 function drawBarBlock(
   doc: jsPDF,
   title: string,
@@ -155,13 +171,12 @@ function drawBarBlock(
   y += 8;
 
   // container
-  const rowH = 20;
   const labelW = width * 0.35;
   const barW = width * 0.65;
   const maxPct = Math.max(...items.map((i) => parseInt(i.pct) || 0), 1);
 
   items.forEach((it, idx) => {
-    const rowY = y + idx * (rowH + 6);
+    const rowY = y + idx * (ROW_H + ROW_GAP);
 
     // label
     doc.setFont("helvetica", "normal");
@@ -170,21 +185,19 @@ function drawBarBlock(
     const label = `${it.label} — ${it.count} (${it.pct})`;
     doc.text(label, x, rowY + 13);
 
-    // barra
-    const pct = parseInt(it.pct) || 0;
-    const w = (pct / maxPct) * (barW - 10);
-
     // trilho
     doc.setDrawColor(CARD_EDGE);
     doc.setFillColor("#fff");
-    doc.roundedRect(x + labelW, rowY, barW, rowH, 6, 6, "FD");
+    doc.roundedRect(x + labelW, rowY, barW, ROW_H, 6, 6, "FD");
 
-    // barra preenchida
+    // barra
+    const pct = parseInt(it.pct) || 0;
+    const w = (pct / maxPct) * (barW - 10);
     doc.setFillColor(BRAND_BLUE);
-    doc.roundedRect(x + labelW + 2, rowY + 2, Math.max(w, 2), rowH - 4, 5, 5, "F");
+    doc.roundedRect(x + labelW + 2, rowY + 2, Math.max(w, 2), ROW_H - 4, 5, 5, "F");
   });
 
-  return y + items.length * (rowH + 6);
+  return y + items.length * (ROW_H + ROW_GAP);
 }
 
 /* ===================== Cálculos de distribuição ===================== */
@@ -217,7 +230,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
   const onExport = useCallback(async () => {
     setLoading(true);
     try {
-      // PDF paisagem, sem conversão de DOM (100% estável)
+      // PDF paisagem
       const options: jsPDFOptions = {
         unit: "pt",
         format: "a4",
@@ -229,20 +242,26 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁG. 1 — KPIs ========= */
-      let y = drawHeader(doc, pageW, marginX, title);
+      /* ========= PÁG. 1 — KPIs (centralizados) ========= */
+      let startY = drawHeader(doc, pageW, marginX, title);
       drawFooter(doc, pageW, pageH, marginX);
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(14);
-      doc.text("Visão Geral", marginX, y + 4);
-      y += 14;
 
       const gap = 16;
       const cardW = (pageW - marginX * 2 - gap * 3) / 4;
       const cardH = 78;
 
+      const titleH = 14; // “Visão Geral”
+      const blockH = titleH + cardH; // altura total do bloco da página
+      let y = centeredStartY(startY, pageH, blockH);
+
+      // Título
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Visão Geral", marginX, y + 4);
+      y += titleH;
+
+      // Cards
       drawKpiCard(doc, marginX + 0 * (cardW + gap), y, cardW, cardH, "Total de respostas", `${kpi.total}`);
       drawKpiCard(
         doc,
@@ -272,114 +291,92 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
         `${kpi.rxReworkPct.toFixed(0)}%`
       );
 
-      /* ========= PÁG. 2 — No-show ========= */
-      y = newPage(doc, { title, marginX, pageW, pageH });
+      /* ========= PÁG. 2 — No-show (centralizado) ========= */
+      startY = newPage(doc, { title, marginX, pageW, pageH });
 
-      const colW = (pageW - marginX * 2 - 24) / 2;
-      const startX = marginX;
-      let colY = y;
+      // medir alturas das colunas
+      const noShowRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
+      const noShowSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]);
+      const noShowImpact = dist(answers, "q_noshow_financial_impact", [
+        "Baixo impacto",
+        "Médio impacto",
+        "Alto impacto",
+      ]);
 
-      colY = drawBarBlock(
-        doc,
-        "Relevância",
-        dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]),
-        startX,
-        colY,
-        colW
-      );
-      colY += 18;
-      colY = drawBarBlock(
-        doc,
-        "Possui sistema que resolve",
-        dist(answers, "q_noshow_has_system", ["Sim", "Não"]),
-        startX,
-        colY,
-        colW
-      );
+      const leftH =
+        measureBarBlock(noShowRelev.length) + 18 + measureBarBlock(noShowSys.length);
+      const rightH = measureBarBlock(noShowImpact.length);
+      const gridH = Math.max(leftH, rightH);
 
-      // segunda coluna
+      y = centeredStartY(startY, pageH, gridH);
+
+      const colGap = 24;
+      const colW = (pageW - marginX * 2 - colGap) / 2;
+      const col1X = marginX;
+      const col2X = marginX + colW + colGap;
+
+      let col1Y = y;
+      col1Y = drawBarBlock(doc, "Relevância", noShowRelev, col1X, col1Y, colW);
+      col1Y += 18;
+      col1Y = drawBarBlock(doc, "Possui sistema que resolve", noShowSys, col1X, col1Y, colW);
+
       let col2Y = y;
-      const col2X = startX + colW + 24;
-      col2Y = drawBarBlock(
-        doc,
-        "Impacto financeiro mensal",
-        dist(answers, "q_noshow_financial_impact", [
-          "Baixo impacto",
-          "Médio impacto",
-          "Alto impacto",
-        ]),
-        col2X,
-        col2Y,
-        colW
-      );
+      col2Y = drawBarBlock(doc, "Impacto financeiro mensal", noShowImpact, col2X, col2Y, colW);
 
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 3 — Glosas ========= */
-      y = newPage(doc, { title, marginX, pageW, pageH });
+      /* ========= PÁG. 3 — Glosas (centralizado) ========= */
+      startY = newPage(doc, { title, marginX, pageW, pageH });
 
-      let g1Y = y;
-      g1Y = drawBarBlock(
-        doc,
-        "Glosas recorrentes",
-        dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]),
-        startX,
-        g1Y,
-        colW
-      );
-      g1Y += 18;
-      g1Y = drawBarBlock(
+      const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
+      const glosaInterest = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]);
+      const glosaWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]);
+
+      const gLeftH =
+        measureBarBlock(glosaRec.length) + 18 + measureBarBlock(glosaInterest.length);
+      const gRightH = measureBarBlock(glosaWho.length);
+      const gGridH = Math.max(gLeftH, gRightH);
+
+      y = centeredStartY(startY, pageH, gGridH);
+
+      col1Y = y;
+      col1Y = drawBarBlock(doc, "Glosas recorrentes", glosaRec, col1X, col1Y, colW);
+      col1Y += 18;
+      col1Y = drawBarBlock(
         doc,
         "Interesse em checagem antes do envio",
-        dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]),
-        startX,
-        g1Y,
+        glosaInterest,
+        col1X,
+        col1Y,
         colW
       );
 
-      let g2Y = y;
-      g2Y = drawBarBlock(
-        doc,
-        "Quem sofre mais",
-        dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]),
-        col2X,
-        g2Y,
-        colW
-      );
+      col2Y = y;
+      col2Y = drawBarBlock(doc, "Quem sofre mais", glosaWho, col2X, col2Y, colW);
 
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 4 — Receitas Digitais ========= */
-      y = newPage(doc, { title, marginX, pageW, pageH });
+      /* ========= PÁG. 4 — Receitas Digitais (centralizado) ========= */
+      startY = newPage(doc, { title, marginX, pageW, pageH });
 
-      let r1Y = y;
-      r1Y = drawBarBlock(
-        doc,
-        "Receitas geram retrabalho",
-        dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]),
-        startX,
-        r1Y,
-        colW
-      );
-      r1Y += 18;
-      r1Y = drawBarBlock(
-        doc,
-        "Pacientes têm dificuldade",
-        dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]),
-        startX,
-        r1Y,
-        colW
-      );
+      const rxRework = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
+      const rxDiff = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]);
+      const rxValue = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]);
 
-      let r2Y = y;
-      r2Y = drawBarBlock(
-        doc,
-        "Valor em ferramenta de apoio",
-        dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]),
-        col2X,
-        r2Y,
-        colW
-      );
+      const rLeftH =
+        measureBarBlock(rxRework.length) + 18 + measureBarBlock(rxDiff.length);
+      const rRightH = measureBarBlock(rxValue.length);
+      const rGridH = Math.max(rLeftH, rRightH);
+
+      y = centeredStartY(startY, pageH, rGridH);
+
+      col1Y = y;
+      col1Y = drawBarBlock(doc, "Receitas geram retrabalho", rxRework, col1X, col1Y, colW);
+      col1Y += 18;
+      col1Y = drawBarBlock(doc, "Pacientes têm dificuldade", rxDiff, col1X, col1Y, colW);
+
+      col2Y = y;
+      col2Y = drawBarBlock(doc, "Valor em ferramenta de apoio", rxValue, col2X, col2Y, colW);
 
       drawFooter(doc, pageW, pageH, marginX);
 
@@ -415,11 +412,11 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
         margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
         theme: "grid",
         didDrawPage: () => {
-          const startY = drawHeader(doc, pageW, marginX, title);
+          const sY = drawHeader(doc, pageW, marginX, title);
           doc.setFont("helvetica", "bold");
           doc.setTextColor(INK);
           doc.setFontSize(14);
-          doc.text("Resumo consolidado por pergunta", marginX, startY + 2);
+          doc.text("Resumo consolidado por pergunta", marginX, sY + 2);
           drawFooter(doc, pageW, pageH, marginX);
         },
       });
@@ -447,11 +444,11 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
           margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
           theme: "grid",
           didDrawPage: () => {
-            const startY = drawHeader(doc, pageW, marginX, title);
+            const sY = drawHeader(doc, pageW, marginX, title);
             doc.setFont("helvetica", "bold");
             doc.setTextColor(INK);
             doc.setFontSize(14);
-            doc.text("Respostas detalhadas (sem identificação sensível)", marginX, startY + 2);
+            doc.text("Respostas detalhadas (sem identificação sensível)", marginX, sY + 2);
             drawFooter(doc, pageW, pageH, marginX);
           },
         });
