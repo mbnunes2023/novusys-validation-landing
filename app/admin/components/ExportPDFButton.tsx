@@ -3,6 +3,7 @@
 import { useState } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import * as htmlToImage from "html-to-image";
 import dayjs from "dayjs";
 
 // ========= helpers =========
