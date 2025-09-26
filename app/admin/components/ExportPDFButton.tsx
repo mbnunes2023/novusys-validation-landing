@@ -315,4 +315,615 @@ const SECTIONS: Record<
     questions: [
       { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não", "Às vezes"] },
       { key: "q_glosa_interest", label: "Interesse em checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
-      { key: "q_glosa_who_suffers", label: "Quem sofre mais", options_
+      // <<< A LINHA QUE QUEBROU NO BUILD ESTÁ CORRETA ABAIXO
+      { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
+    ],
+  },
+  receitas: {
+    title: "Receitas digitais e telemedicina",
+    questions: [
+      { key: "q_rx_rework", label: "Receitas geram retrabalho", options: ["Sim", "Não", "Raramente"] },
+      { key: "q_rx_elderly_difficulty", label: "Pacientes têm dificuldade", options: ["Sim", "Não", "Em parte"] },
+      { key: "q_rx_tool_value", label: "Valor em ferramenta de apoio", options: ["Sim", "Não", "Talvez"] },
+    ],
+  },
+};
+
+function renderSectionTable(
+  doc: jsPDF,
+  section: (typeof SECTIONS)[SectionKey],
+  answers: Answer[],
+  pageW: number,
+  pageH: number,
+  marginX: number,
+  title: string,
+  logoDataUrl?: string | null
+) {
+  type Row = { pergunta: string; opcao: string; qtde: number; pct: string };
+  const rows: Row[] = [];
+  let answeredAll = 0;
+  let notAnsweredAll = 0;
+
+  section.questions.forEach((q) => {
+    const { items, answered, unknownCount } = dist(answers, q.key, q.options);
+    answeredAll += answered;
+    notAnsweredAll += unknownCount;
+
+    items
+      .filter((it) => it.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .forEach((it) => {
+        rows.push({ pergunta: q.label, opcao: it.label, qtde: it.count, pct: it.pct });
+      });
+  });
+
+  const HEADER_GAP = 28;
+  const topY = 14 + 72 + 12 + HEADER_GAP + TOP_GAP;
+
+  autoTable(doc as any, {
+    startY: topY,
+    styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+    headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+    body: rows.length ? rows : [{ pergunta: "—", opcao: "—", qtde: 0, pct: "0%" } ],
+    columns: [
+      { header: section.title, dataKey: "pergunta" },
+      { header: "Opção", dataKey: "opcao" },
+      { header: "Qtde", dataKey: "qtde" },
+      { header: "% (entre respondentes)", dataKey: "pct" },
+    ],
+    columnStyles: {
+      pergunta: { cellWidth: 260, overflow: "linebreak" },
+      opcao: { cellWidth: 220, overflow: "linebreak" },
+      qtde: { cellWidth: 60, halign: "right" },
+      pct: { cellWidth: 160, halign: "right" },
+    },
+    tableWidth: pageW - marginX * 2,
+    margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
+    theme: "grid",
+    rowPageBreak: "auto",
+    didDrawPage: () => {
+      const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+      const sampleTxt = `Respondido: ${answeredAll} • Não respondido: ${notAnsweredAll}`;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK_SOFT);
+      doc.setFontSize(11);
+      doc.text(sampleTxt, marginX, sY + HEADER_GAP - 12);
+      drawFooter(doc, pageW, pageH, marginX);
+    },
+  });
+
+  return (doc as any).lastAutoTable.finalY;
+}
+
+/* ===================== Respostas detalhadas — Premium ===================== */
+
+function drawPill(doc: jsPDF, x: number, y: number, text: string) {
+  const padX = 6;
+  const padY = 4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  const w = doc.getTextWidth(text) + padX * 2;
+  const h = 18;
+  doc.setDrawColor(CARD_EDGE);
+  doc.setFillColor("#f6f9ff");
+  doc.roundedRect(x, y, w, h, 9, 9, "FD");
+  doc.setTextColor(BRAND_BLUE);
+  doc.text(text, x + padX, y + 12);
+  return { width: w, height: h };
+}
+
+function safeText(v: any): string {
+  if (v == null || v === "") return "Não informado";
+  if (typeof v === "boolean") return v ? "Sim" : "Não";
+  return String(v);
+}
+
+function renderDetailedAsCards(
+  doc: jsPDF,
+  answers: Answer[],
+  pageW: number,
+  pageH: number,
+  marginX: number,
+  title: string,
+  logoDataUrl?: string | null
+) {
+  const gap = 18;
+  const colW = (pageW - marginX * 2 - gap) / 2;
+  let startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(INK);
+  doc.setFontSize(14);
+  doc.text("Respostas detalhadas (cartões)", marginX, startY + 2);
+  let y = startY + 14;
+
+  const lineH = 16;
+
+  answers.forEach((a, idx) => {
+    const col = idx % 2;
+    const x = marginX + col * (colW + gap);
+
+    const commentRaw = (a.comments || "").toString().trim();
+    const comment = commentRaw ? commentRaw : "";
+    const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
+    const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
+
+    const baseH = 24 + 8 + 3 * 28 + (comment ? 18 : 0) + commentH + 18;
+    let cardH = baseH;
+
+    if (y + cardH > pageH - 60) {
+      y = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 14;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Respostas detalhadas (cartões)", marginX, y - 12);
+    }
+
+    doc.setDrawColor(CARD_EDGE);
+    doc.setFillColor("#ffffff");
+    doc.roundedRect(x, y, colW, cardH, 12, 12, "FD");
+
+    const code = `R-${String(idx + 1).padStart(2, "0")}`;
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(INK);
+    doc.setFontSize(12);
+    doc.text(`Resposta ${code}`, x + 14, y + 22);
+
+    const consent = !!(a.consent_contact || a.consent);
+    if (consent) {
+      const idLine = [safeText(a.doctor_name), safeText(a.crm), safeText(a.contact)]
+        .filter((t) => t && t !== "Não informado")
+        .join(" • ");
+      if (idLine) {
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK_SOFT);
+        doc.setFontSize(10);
+        doc.text(idLine, x + 14, y + 38, { maxWidth: colW - 28 });
+      }
+    }
+
+    let rowY = y + (consent ? 50 : 42);
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(INK);
+    doc.setFontSize(11);
+    doc.text("No-show", x + 14, rowY);
+    rowY += 4;
+    let px = x + 14;
+    px += drawPill(doc, px, rowY, safeText(a.q_noshow_relevance)).width + 8;
+    px += drawPill(doc, px, rowY, safeText(a.q_noshow_has_system)).width + 8;
+    drawPill(doc, px, rowY, safeText(a.q_noshow_financial_impact));
+    rowY += 28;
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(INK);
+    doc.setFontSize(11);
+    doc.text("Glosas", x + 14, rowY);
+    rowY += 4;
+    px = x + 14;
+    px += drawPill(doc, px, rowY, safeText(a.q_glosa_is_problem)).width + 8;
+    px += drawPill(doc, px, rowY, safeText(a.q_glosa_interest)).width + 8;
+    drawPill(doc, px, rowY, safeText(a.q_glosa_who_suffers));
+    rowY += 28;
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(INK);
+    doc.setFontSize(11);
+    doc.text("Receitas digitais", x + 14, rowY);
+    rowY += 4;
+    px = x + 14;
+    px += drawPill(doc, px, rowY, safeText(a.q_rx_rework)).width + 8;
+    px += drawPill(doc, px, rowY, safeText(a.q_rx_elderly_difficulty)).width + 8;
+    drawPill(doc, px, rowY, safeText(a.q_rx_tool_value));
+    rowY += 28;
+
+    if (commentLines.length) {
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(11);
+      doc.text("Comentário (resumo)", x + 14, rowY);
+      rowY += 16;
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(11);
+      doc.text(commentLines, x + 14, rowY);
+      rowY += commentH;
+    }
+
+    rowY += 12;
+    const usedH = rowY - y;
+    if (usedH + 10 > cardH) cardH = usedH + 10;
+
+    if (col === 1) y += cardH + 12;
+  });
+}
+
+function renderDetailedAsTables(
+  doc: jsPDF,
+  answers: Answer[],
+  pageW: number,
+  pageH: number,
+  marginX: number,
+  title: string,
+  logoDataUrl?: string | null
+) {
+  type Row = { resp: string; a: string; b: string; c: string };
+
+  const buildRows = (keys: [keyof Answer, keyof Answer, keyof Answer]): Row[] => {
+    return answers.map((a, i) => ({
+      resp: `R-${String(i + 1).padStart(2, "0")}`,
+      a: safeText(a[keys[0]]),
+      b: safeText(a[keys[1]]),
+      c: safeText(a[keys[2]]),
+    }));
+  };
+
+  const sections: Array<{ title: string; rows: Row[]; heads: [string, string, string] }> = [
+    {
+      title: "No-show (linha = respondente)",
+      rows: buildRows(["q_noshow_relevance", "q_noshow_has_system", "q_noshow_financial_impact"]),
+      heads: ["Relevância", "Sistema", "Impacto"],
+    },
+    {
+      title: "Glosas (linha = respondente)",
+      rows: buildRows(["q_glosa_is_problem", "q_glosa_interest", "q_glosa_who_suffers"]),
+      heads: ["Recorrência", "Checagem", "Quem sofre"],
+    },
+    {
+      title: "Receitas digitais (linha = respondente)",
+      rows: buildRows(["q_rx_rework", "q_rx_elderly_difficulty", "q_rx_tool_value"]),
+      heads: ["Retrabalho", "Dificuldade", "Valor na ferramenta"],
+    },
+  ];
+
+  const headerGap = 28;
+  const topY = 14 + 72 + 12 + headerGap + TOP_GAP;
+
+  sections.forEach((sec, idx) => {
+    autoTable(doc as any, {
+      startY: idx === 0 ? topY : (doc as any).lastAutoTable.finalY + 26,
+      styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+      headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold" },
+      body: sec.rows,
+      columns: [
+        { header: sec.title, dataKey: "resp" },
+        { header: sec.heads[0], dataKey: "a" },
+        { header: sec.heads[1], dataKey: "b" },
+        { header: sec.heads[2], dataKey: "c" },
+      ],
+      columnStyles: {
+        resp: { cellWidth: 90 },
+        a: { cellWidth: 220, overflow: "linebreak" },
+        b: { cellWidth: 220, overflow: "linebreak" },
+        c: { cellWidth: 240, overflow: "linebreak" },
+      },
+      tableWidth: pageW - marginX * 2,
+      margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
+      theme: "grid",
+      rowPageBreak: "auto",
+      didDrawPage: () => {
+        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text("Respostas detalhadas (tabelas por tema)", marginX, sY + 18);
+        drawFooter(doc, pageW, pageH, marginX);
+      },
+    });
+  });
+}
+
+/* ===================== Componente ===================== */
+
+export default function ExportPDFButton({ kpi, answers }: Props) {
+  const [loading, setLoading] = useState(false);
+
+  const onExport = useCallback(async () => {
+    setLoading(true);
+    try {
+      const logoDataUrl = await fetchAsDataURL("/logo.png");
+
+      const options: jsPDFOptions = { unit: "pt", format: "a4", orientation: "landscape" };
+      const doc = new jsPDF(options);
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      const marginX = 48;
+      const title = "Relatório da Pesquisa — Clínicas e Consultórios";
+
+      /* ========= PÁGINA 1: Sumário + Resumo Executivo ========= */
+      let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+      drawFooter(doc, pageW, pageH, marginX);
+
+      const CARD_W = pageW - marginX * 2;
+      const PAD_X = 18;
+      const TITLE_GAP = 26;
+      const LINE = 18;
+
+      // SUMÁRIO (preto)
+      const tocItems = [
+        "Visão Geral (KPIs + distribuições)",
+        "Consolidado por tema",
+        "Respostas detalhadas",
+        "Comentários",
+        "Identificação (opcional)",
+      ];
+      const summaryTitleH = 16;
+      const summaryListH = tocItems.length * LINE;
+      const summaryPadBottom = 20;
+      const summaryCardH = TITLE_GAP + summaryTitleH + 8 + summaryListH + summaryPadBottom;
+
+      if (startY + summaryCardH > pageH - 60) {
+        startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      }
+
+      let y = startY;
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, y, CARD_W, summaryCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(16);
+      doc.text("Sumário", marginX + PAD_X, y + TITLE_GAP);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(12);
+
+      let listY = y + TITLE_GAP + summaryTitleH + 8;
+      tocItems.forEach((label, i) => {
+        doc.text(`${i + 1}. ${label}`, marginX + PAD_X, listY, { maxWidth: CARD_W - PAD_X * 2 });
+        listY += LINE;
+      });
+
+      // RESUMO EXECUTIVO
+      const bullets = [
+        `Amostra consolidada: ${kpi.total} respostas.`,
+        `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
+          0
+        )}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
+        "Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.",
+      ];
+
+      const reTitleH = 14;
+      const bulletsH = bullets.length * LINE;
+      const rePadBottom = 24;
+      const reCardH = TITLE_GAP + reTitleH + 8 + bulletsH + rePadBottom;
+
+      const gapBetweenCards = 20;
+      let reTop = y + summaryCardH + gapBetweenCards;
+
+      if (reTop + reCardH > pageH - 60) {
+        reTop = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      }
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, reTop, CARD_W, reCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Resumo Executivo — Principais insights", marginX + PAD_X, reTop + TITLE_GAP);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(12);
+
+      let by = reTop + TITLE_GAP + reTitleH + 8;
+      const maxW = CARD_W - PAD_X * 2;
+      bullets.forEach((line) => {
+        doc.circle(marginX + PAD_X, by - 3, 2, "F");
+        doc.text(line, marginX + PAD_X + 10, by, { maxWidth: maxW - 10 });
+        by += LINE;
+      });
+
+      /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3 compacta) ========= */
+      startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+
+      const gap = 16;
+      const kpiCardW = (pageW - marginX * 2 - gap * 3) / 4;
+      const kpiCardH = 82;
+
+      let kpiY = startY;
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Visão Geral", marginX, kpiY + 2);
+      kpiY += 14;
+
+      drawKpiCard(doc, marginX + 0 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "Total de respostas", `${kpi.total}`, ACCENT);
+      drawKpiCard(doc, marginX + 1 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
+
+      let gridTop = kpiY + kpiCardH + 24;
+
+      const nsRelev  = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items;
+      const nsSys    = dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items;
+      const nsImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]).items;
+
+      const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items;
+      const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items;
+      const gWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]).items;
+
+      const rxRw  = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]).items;
+      const rxDif = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]).items;
+      const rxVal = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]).items;
+
+      const blocks: Array<{ title: string; items: DistItem[] }> = [
+        { title: "No-show — Relevância",                 items: nsRelev },
+        { title: "No-show — Sistema que resolve",        items: nsSys },
+        { title: "No-show — Impacto financeiro mensal",  items: nsImpact },
+        { title: "Glosas — Recorrência",                 items: gRec },
+        { title: "Glosas — Checagem antes do envio",     items: gInt },
+        { title: "Glosas — Quem sofre mais",             items: gWho },
+        { title: "Receitas — Geram retrabalho",          items: rxRw },
+        { title: "Receitas — Dificuldade dos pacientes", items: rxDif },
+        { title: "Receitas — Valor em ferramenta",       items: rxVal },
+      ];
+
+      const COLS = 3;
+      const COL_GAP = 18;
+      const COL_W = (pageW - marginX * 2 - COL_GAP * (COLS - 1)) / COLS;
+
+      let x = marginX;
+      let yCompact = gridTop;
+
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        const h = measureBarBlockCompact(b.items.length);
+
+        if (yCompact + h > pageH - 60) {
+          startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(INK);
+          doc.setFontSize(14);
+          doc.text("Visão Geral — Distribuições compactas", marginX, startY + 2);
+          yCompact = startY + 14;
+          x = marginX;
+        }
+
+        drawBarBlockCompact(doc, b.title, b.items, x, yCompact, COL_W);
+
+        const col = i % COLS;
+        if (col === COLS - 1) {
+          x = marginX;
+          yCompact += Math.max(h, 74);
+        } else {
+          x += COL_W + COL_GAP;
+        }
+      }
+
+      drawFooter(doc, pageW, pageH, marginX);
+
+      /* ========= PÁGINAS 3–5: Consolidado por TEMA ========= */
+      for (const key of ["noshow", "glosas", "receitas"] as SectionKey[]) {
+        doc.addPage();
+        renderSectionTable(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
+      }
+
+      /* ========= RESPOSTAS DETALHADAS — modo adaptativo ========= */
+      if (answers.length <= 20) {
+        renderDetailedAsCards(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
+      } else {
+        renderDetailedAsTables(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
+      }
+
+      /* ========= COMENTÁRIOS ========= */
+      const comments: Array<{ code: string; text: string }> = answers
+        .map((a, i) => ({
+          code: `R-${String(i + 1).padStart(2, "0")}`,
+          text: (a.comments || "").toString().trim(),
+        }))
+        .filter((c) => c.text.length > 0);
+
+      if (comments.length) {
+        doc.addPage();
+        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text("Comentários (texto livre) — referência por código da resposta", marginX, sY + 18);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK);
+        doc.setFontSize(12);
+
+        let yC = sY + 40;
+        const maxW = pageW - marginX * 2 - 20;
+        const lineH = 18;
+
+        comments.forEach((c) => {
+          const bullet = `${c.code} — ${c.text}`;
+          const lines = doc.splitTextToSize(bullet, maxW);
+          if (yC + lines.length * lineH > pageH - 60) {
+            drawFooter(doc, pageW, pageH, marginX);
+            doc.addPage();
+            const sY2 = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(14);
+            doc.text("Comentários (continuação)", marginX, sY2 + 18);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(INK);
+            doc.setFontSize(12);
+            yC = sY2 + 40;
+          }
+          doc.text(lines, marginX + 10, yC);
+          yC += lines.length * lineH + 8;
+        });
+
+        drawFooter(doc, pageW, pageH, marginX);
+      }
+
+      /* ========= IDENTIFICAÇÃO (se autorizado) ========= */
+      const idRows = answers
+        .filter((a) => a.consent_contact === true || a.consent === true)
+        .map((a, i) => ({
+          resp: `R-${String(i + 1).padStart(2, "0")}`,
+          nome: (a.doctor_name || "").toString().trim() || "—",
+          crm: (a.crm || "").toString().trim() || "—",
+          contato: (a.contact || "").toString().trim() || "—",
+        }))
+        .filter((r) => r.nome !== "—" || r.crm !== "—" || r.contato !== "—");
+
+      if (idRows.length) {
+        doc.addPage();
+        const headerGap = 28;
+        const topY = 14 + 72 + 12 + headerGap + TOP_GAP;
+
+        autoTable(doc as any, {
+          startY: topY,
+          styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+          headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+          body: idRows,
+          columns: [
+            { header: "Resp.", dataKey: "resp" },
+            { header: "Nome", dataKey: "nome" },
+            { header: "CRM", dataKey: "crm" },
+            { header: "Contato (e-mail / WhatsApp)", dataKey: "contato" },
+          ],
+          tableWidth: pageW - marginX * 2,
+          margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
+          theme: "grid",
+          rowPageBreak: "auto",
+          didDrawPage: () => {
+            const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(14);
+            doc.text("Identificação (somente com autorização de contato)", marginX, sY + 18);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(INK_SOFT);
+            doc.setFontSize(11);
+            doc.text("Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.", marginX, sY + 36);
+            drawFooter(doc, pageW, pageH, marginX);
+          },
+        });
+      }
+
+      const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
+      doc.save(fileName);
+    } finally {
+      setLoading(false);
+    }
+  }, [answers, kpi]);
+
+  return (
+    <button
+      type="button"
+      onClick={onExport}
+      disabled={loading}
+      aria-busy={loading}
+      className="inline-flex items-center rounded-xl px-4 py-2 font-medium text-white disabled:opacity-60"
+      style={{
+        background: "linear-gradient(90deg, #1976d2, #2575fc)",
+        boxShadow: "0 6px 16px rgba(25,118,210,.25)",
+      }}
+    >
+      {loading ? "Gerando PDF..." : "Exportar PDF (apresentação)"}
+    </button>
+  );
+}
