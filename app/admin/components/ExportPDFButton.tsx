@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useCallback } from "react";
-import type React from "react"; // para os tipos de RefObject
+import type React from "react";
 import jsPDF, { jsPDFOptions } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -15,10 +15,8 @@ type KPI = {
   glosaRecorrentePct: number;
   rxReworkPct: number;
 };
-
 type Answer = Record<string, any>;
 
-// chartRefs segue opcional e ignorado no código
 type Props = {
   kpi: KPI;
   summaryRows: Array<Record<string, number | string>>;
@@ -30,16 +28,15 @@ type Props = {
   };
 };
 
-/* ===================== Paleta / branding ===================== */
+/* ===================== Branding & UI ===================== */
 
 const BRAND_BLUE = "#1976d2";
-const BRAND_GRAD_LEFT = "#1976d2";
-const BRAND_GRAD_RIGHT = "#2575fc";
 const INK = "#0f172a";
 const INK_SOFT = "#64748b";
 const CARD_EDGE = "#e9edf7";
+const ACCENT = "#2575fc";
 
-/* ===================== Utilitários ===================== */
+/* ===================== Utils ===================== */
 
 function formatNow(): string {
   const d = new Date();
@@ -54,30 +51,25 @@ function percent(part: number, total: number) {
   return `${Math.round((part / total) * 100)}%`;
 }
 
-/** devolve a altura útil entre topo do conteúdo e rodapé */
 function usableHeight(startY: number, pageH: number, bottomPadding = 40) {
   return Math.max(0, pageH - bottomPadding - startY);
 }
-
-/** centraliza verticalmente um bloco de altura `blockH` dentro do espaço útil */
 function centeredStartY(startY: number, pageH: number, blockH: number) {
   const avail = usableHeight(startY, pageH);
   const offset = Math.max(0, (avail - blockH) / 2);
   return startY + offset;
 }
 
-/* ===================== Utils para logo ===================== */
-
-// Carrega /logo.png e retorna como DataURL (base64). Em erro, retorna null.
+// Carrega /logo.png e retorna base64 (DataURL). Falhou? null.
 async function fetchAsDataURL(path: string): Promise<string | null> {
   try {
     const res = await fetch(path);
     if (!res.ok) return null;
     const blob = await res.blob();
     return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(blob);
+      const r = new FileReader();
+      r.onloadend = () => resolve(r.result as string);
+      r.readAsDataURL(blob);
     });
   } catch {
     return null;
@@ -93,11 +85,11 @@ function drawHeader(
   title: string,
   logoDataUrl?: string | null
 ) {
-  // Faixa superior
+  // faixa superior
   doc.setFillColor(BRAND_BLUE);
   doc.rect(0, 0, pageW, 6, "F");
 
-  // Card do header
+  // card
   const headerH = 70;
   const cardX = marginX;
   const cardY = 14;
@@ -108,10 +100,10 @@ function drawHeader(
   doc.setLineWidth(1);
   doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
 
-  // Título + data (lado esquerdo) — título um pouco mais alto e com mais espaço até a data
+  // bloco título + data (esquerda)
   const leftPad = 18;
-  const titleY = cardY + 26 + 20; // antes era +24; subimos ~4pt
-  const DATE_GAP = 22; // antes 16; mais espaço entre título e data
+  const titleY = cardY + 26 + 20; // levemente mais alto
+  const DATE_GAP = 22; // mais espaço até a data
 
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
@@ -123,36 +115,28 @@ function drawHeader(
   doc.setFontSize(10);
   doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, titleY + DATE_GAP);
 
-  // Logo no canto superior direito (se existir)
+  // logo (direita)
   if (logoDataUrl) {
-    // Logo maior
-    const targetW = 160; // largura
-    const targetH = 48;  // altura
+    const targetW = 160;
+    const targetH = 48;
     const padRight = 18;
     const padTop = 10;
-
     const imgX = cardX + cardW - padRight - targetW;
     const imgY = cardY + padTop;
-
     try {
       doc.addImage(logoDataUrl, "PNG", imgX, imgY, targetW, targetH);
-    } catch {
-      // se falhar, apenas não desenha
-    }
+    } catch {}
   }
 
-  return cardY + headerH + 12; // y de início do conteúdo
+  return cardY + headerH + 12; // início do conteúdo
 }
 
 function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
-  const year = new Date().getFullYear();
-  const left = `© ${year} NovuSys — Relatório gerado automaticamente`;
+  const left = `Relatório gerado automaticamente`;
   const right = `p. ${doc.getCurrentPageInfo().pageNumber}`;
-
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(INK_SOFT);
-
   doc.text(left, marginX, pageH - 14);
   const rightW = doc.getTextWidth(right);
   doc.text(right, pageW - marginX - rightW, pageH - 14);
@@ -177,32 +161,35 @@ function drawKpiCard(
   w: number,
   h: number,
   title: string,
-  value: string
+  value: string,
+  accent = BRAND_BLUE
 ) {
   doc.setDrawColor(CARD_EDGE);
   doc.setFillColor("#ffffff");
-  doc.roundedRect(x, y, w, h, 10, 10, "FD");
+  doc.roundedRect(x, y, w, h, 12, 12, "FD");
+
+  // top accent
+  doc.setFillColor(accent);
+  doc.roundedRect(x, y, w, 6, 12, 12, "F");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(INK);
-  doc.text(title, x + 14, y + 22);
+  doc.text(title, x + 16, y + 26);
 
-  doc.setTextColor(BRAND_BLUE);
+  doc.setTextColor(accent);
   doc.setFontSize(30);
-  doc.text(value, x + 14, y + 56);
+  doc.text(value, x + 16, y + 58);
 }
 
-/* ===================== Micro-charts de barras ===================== */
+/* ===================== Micro-charts ===================== */
 
 type DistItem = { label: string; count: number; pct: string };
-
 const ROW_H = 20;
 const ROW_GAP = 6;
 
-/** mede a altura de um bloco de barras dado o nº de linhas */
 function measureBarBlock(lines: number) {
-  return 8 + lines * (ROW_H + ROW_GAP); // título(8) + linhas
+  return 8 + lines * (ROW_H + ROW_GAP);
 }
 
 function drawBarBlock(
@@ -213,33 +200,29 @@ function drawBarBlock(
   y: number,
   width: number
 ) {
-  // título
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(13);
   doc.text(title, x, y);
   y += 8;
 
-  const labelW = width * 0.35;
-  const barW = width * 0.65;
+  const labelW = width * 0.40; // mais espaço para label
+  const barW = width * 0.60;
   const maxPct = Math.max(...items.map((i) => parseInt(i.pct) || 0), 1);
 
   items.forEach((it, idx) => {
     const rowY = y + idx * (ROW_H + ROW_GAP);
 
-    // label
     doc.setFont("helvetica", "normal");
     doc.setTextColor(INK_SOFT);
     doc.setFontSize(11);
     const label = `${it.label} — ${it.count} (${it.pct})`;
     doc.text(label, x, rowY + 13);
 
-    // trilho
     doc.setDrawColor(CARD_EDGE);
     doc.setFillColor("#fff");
     doc.roundedRect(x + labelW, rowY, barW, ROW_H, 6, 6, "FD");
 
-    // barra
     const pct = parseInt(it.pct) || 0;
     const w = (pct / maxPct) * (barW - 10);
     doc.setFillColor(BRAND_BLUE);
@@ -249,13 +232,9 @@ function drawBarBlock(
   return y + items.length * (ROW_H + ROW_GAP);
 }
 
-/* ===================== Cálculos de distribuição ===================== */
+/* ===================== Distribuições & Insights ===================== */
 
-function dist(
-  answers: Answer[],
-  field: keyof Answer,
-  order: string[]
-): DistItem[] {
+function dist(answers: Answer[], field: keyof Answer, order: string[]): DistItem[] {
   const total = answers.length;
   const counts: Record<string, number> = {};
   order.forEach((k) => (counts[k] = 0));
@@ -271,98 +250,203 @@ function dist(
   }));
 }
 
-/* ===================== Botão ===================== */
+// Gera 3–5 frases de insight em linguagem executiva.
+function generateInsights(kpi: KPI, answers: Answer[]) {
+  const insights: string[] = [];
 
-export default function ExportPDFButton({
-  kpi,
-  summaryRows,
-  answers,
-  chartRefs, // mantido apenas para compatibilidade; não é usado
-}: Props) {
+  // 1) No-show
+  const relev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
+  const yesPct = parseInt(relev.find((r) => r.label === "Sim")?.pct || "0");
+  if (yesPct >= 50) {
+    insights.push(`O no-show é percebido como relevante por ${yesPct}% dos respondentes, reforçando a necessidade de uma abordagem ativa de mitigação.`);
+  }
+
+  // 2) Glosas
+  const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
+  const glosaYes = parseInt(glosaRec.find((r) => r.label === "Sim")?.pct || "0");
+  if (glosaYes >= 40) {
+    insights.push(`Glosas recorrentes afetam o dia a dia: ${glosaYes}% indicam ocorrência, o que abre espaço para prevenção pré-envio.`);
+  }
+
+  // 3) Retrabalho em receitas
+  const rx = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
+  const rxYes = parseInt(rx.find((r) => r.label === "Sim")?.pct || "0");
+  if (rxYes >= 30) {
+    insights.push(`Receitas digitais ainda geram retrabalho (${rxYes}%), sugerindo oportunidade em ferramentas de apoio e padronização.`);
+  }
+
+  // 4) KPI macro
+  insights.push(
+    `O estudo consolida ${kpi.total} respostas; estimativas de impacto mostram ${kpi.noshowYesPct.toFixed(
+      0
+    )}% de no-show relevante, ${kpi.glosaRecorrentePct.toFixed(
+      0
+    )}% de glosas recorrentes e ${kpi.rxReworkPct.toFixed(
+      0
+    )}% de retrabalho em receitas.`
+  );
+
+  // 5) Call-to-action
+  insights.push(
+    `Recomendação: priorizar pilotos rápidos em no-show e glosas (checagem pré-envio), acompanhados de um fluxo assistido para receitas.`
+  );
+
+  return insights.slice(0, 5);
+}
+
+/* ===================== Tabela “Detalhes” com curadoria ===================== */
+
+const SENSITIVE_KEYS = new Set([
+  "id",
+  "created_at",
+  "doctor_name",
+  "crm",
+  "contact",
+  "consent",
+  "consent_contact",
+  "doctor_role",
+  "clinic_size",
+]);
+
+const HEADER_MAP: Record<string, string> = {
+  q_noshow_relevance: "No-show relevante?",
+  q_noshow_has_system: "Sistema p/ no-show?",
+  q_noshow_financial_impact: "Impacto financeiro",
+  q_glosa_is_problem: "Glosas recorrentes?",
+  q_glosa_interest: "Checagem antes do envio",
+  q_glosa_who_suffers: "Quem sofre mais",
+  q_rx_rework: "Receitas geram retrabalho?",
+  q_rx_elderly_difficulty: "Pacientes têm dificuldade?",
+  q_rx_tool_value: "Valor em ferramenta de apoio",
+  comments: "Observações",
+};
+
+/* ===================== Componente ===================== */
+
+export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
   const [loading, setLoading] = useState(false);
 
   const onExport = useCallback(async () => {
     setLoading(true);
     try {
-      // Carrega o logo da pasta /public (Next serve em /logo.png)
       const logoDataUrl = await fetchAsDataURL("/logo.png");
 
-      const options: jsPDFOptions = {
-        unit: "pt",
-        format: "a4",
-        orientation: "landscape",
-      };
+      const options: jsPDFOptions = { unit: "pt", format: "a4", orientation: "landscape" };
       const doc = new jsPDF(options);
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁG. 1 — KPIs (centralizados) ========= */
-      let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
-      drawFooter(doc, pageW, pageH, marginX);
+      /* ========= CAPA ========= */
+      doc.setFillColor(BRAND_BLUE);
+      doc.rect(0, 0, pageW, 6, "F");
 
-      const gap = 16;
-      const cardW = (pageW - marginX * 2 - gap * 3) / 4;
-      const cardH = 78;
+      const coverX = marginX;
+      const coverY = 80;
+      const coverW = pageW - marginX * 2;
 
-      const titleH = 14;
-      const blockH = titleH + cardH;
-      let y = centeredStartY(startY, pageH, blockH);
+      // logo grande
+      if (logoDataUrl) {
+        try {
+          doc.addImage(logoDataUrl, "PNG", coverX + coverW - 260, coverY - 20, 220, 66);
+        } catch {}
+      }
+
+      // título & subtítulo
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(26);
+      doc.text("Relatório da Pesquisa", coverX, coverY + 20);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK_SOFT);
+      doc.setFontSize(14);
+      doc.text("Clínicas e Consultórios — Sumário Executivo", coverX, coverY + 46);
+
+      // data
+      doc.setFontSize(10);
+      doc.text(`Gerado em ${formatNow()}`, coverX, coverY + 66);
+
+      // caixa de destaque
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(coverX, coverY + 86, coverW, 110, 12, 12, "FD");
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
-      doc.text("Visão Geral", marginX, y + 4);
-      y += titleH;
+      doc.text("Resumo Executivo — Principais insights", coverX + 18, coverY + 110);
 
-      drawKpiCard(doc, marginX + 0 * (cardW + gap), y, cardW, cardH, "Total de respostas", `${kpi.total}`);
-      drawKpiCard(
-        doc,
-        marginX + 1 * (cardW + gap),
-        y,
-        cardW,
-        cardH,
-        "% no-show relevante",
-        `${kpi.noshowYesPct.toFixed(0)}%`
-      );
-      drawKpiCard(
-        doc,
-        marginX + 2 * (cardW + gap),
-        y,
-        cardW,
-        cardH,
-        "% glosas recorrentes",
-        `${kpi.glosaRecorrentePct.toFixed(0)}%`
-      );
-      drawKpiCard(
-        doc,
-        marginX + 3 * (cardW + gap),
-        y,
-        cardW,
-        cardH,
-        "% receitas geram retrabalho",
-        `${kpi.rxReworkPct.toFixed(0)}%`
-      );
+      const insights = generateInsights(kpi, answers);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(12);
+      let iy = coverY + 130;
+      insights.forEach((line) => {
+        doc.circle(coverX + 18, iy - 3, 2, "F");
+        doc.text(line, coverX + 28, iy, { maxWidth: coverW - 56 });
+        iy += 20;
+      });
 
-      /* ========= PÁG. 2 — No-show ========= */
+      drawFooter(doc, pageW, pageH, marginX);
+
+      /* ========= SUMÁRIO (TOC) ========= */
+      doc.addPage();
+      const tocStartY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(16);
+      doc.text("Sumário", marginX, tocStartY + 6);
+
+      const tocItems = [
+        "Visão Geral (KPIs)",
+        "No-show",
+        "Glosas",
+        "Receitas Digitais",
+        "Resumo consolidado",
+        "Respostas detalhadas",
+      ];
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(12);
+      doc.setTextColor(INK_SOFT);
+      tocItems.forEach((label, i) => {
+        doc.text(`${i + 1}. ${label}`, marginX, tocStartY + 30 + i * 18);
+      });
+      drawFooter(doc, pageW, pageH, marginX);
+
+      /* ========= PÁG. KPIs ========= */
+      let startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      const gap = 16;
+      const cardW = (pageW - marginX * 2 - gap * 3) / 4;
+      const cardH = 82;
+
+      let y = centeredStartY(startY, pageH, 14 + cardH);
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Visão Geral", marginX, y + 2);
+      y += 14;
+
+      drawKpiCard(doc, marginX + 0 * (cardW + gap), y, cardW, cardH, "Total de respostas", `${kpi.total}`, ACCENT);
+      drawKpiCard(doc, marginX + 1 * (cardW + gap), y, cardW, cardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 2 * (cardW + gap), y, cardW, cardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 3 * (cardW + gap), y, cardW, cardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
+      drawFooter(doc, pageW, pageH, marginX);
+
+      /* ========= PÁG. No-show ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const noShowRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
       const noShowSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]);
-      const noShowImpact = dist(answers, "q_noshow_financial_impact", [
-        "Baixo impacto",
-        "Médio impacto",
-        "Alto impacto",
-      ]);
+      const noShowImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]);
 
-      const leftH =
-        measureBarBlock(noShowRelev.length) + 18 + measureBarBlock(noShowSys.length);
+      const leftH = measureBarBlock(noShowRelev.length) + 18 + measureBarBlock(noShowSys.length);
       const rightH = measureBarBlock(noShowImpact.length);
       const gridH = Math.max(leftH, rightH);
 
       y = centeredStartY(startY, pageH, gridH);
-
       const colGap = 24;
       const colW = (pageW - marginX * 2 - colGap) / 2;
       const col1X = marginX;
@@ -375,18 +459,16 @@ export default function ExportPDFButton({
 
       let col2Y = y;
       col2Y = drawBarBlock(doc, "Impacto financeiro mensal", noShowImpact, col2X, col2Y, colW);
-
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 3 — Glosas ========= */
+      /* ========= PÁG. Glosas ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
       const glosaInterest = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]);
       const glosaWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]);
 
-      const gLeftH =
-        measureBarBlock(glosaRec.length) + 18 + measureBarBlock(glosaInterest.length);
+      const gLeftH = measureBarBlock(glosaRec.length) + 18 + measureBarBlock(glosaInterest.length);
       const gRightH = measureBarBlock(glosaWho.length);
       const gGridH = Math.max(gLeftH, gRightH);
 
@@ -395,21 +477,13 @@ export default function ExportPDFButton({
       let col1Y_glosa = y;
       col1Y_glosa = drawBarBlock(doc, "Glosas recorrentes", glosaRec, col1X, col1Y_glosa, colW);
       col1Y_glosa += 18;
-      col1Y_glosa = drawBarBlock(
-        doc,
-        "Interesse em checagem antes do envio",
-        glosaInterest,
-        col1X,
-        col1Y_glosa,
-        colW
-      );
+      col1Y_glosa = drawBarBlock(doc, "Interesse em checagem antes do envio", glosaInterest, col1X, col1Y_glosa, colW);
 
       let col2Y_glosa = y;
       col2Y_glosa = drawBarBlock(doc, "Quem sofre mais", glosaWho, col2X, col2Y_glosa, colW);
-
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 4 — Receitas Digitais ========= */
+      /* ========= PÁG. Receitas Digitais ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const rxRework = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
@@ -429,20 +503,11 @@ export default function ExportPDFButton({
 
       let col2Y_rx = y;
       col2Y_rx = drawBarBlock(doc, "Valor em ferramenta de apoio", rxValue, col2X, col2Y_rx, colW);
-
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 5 — Resumo ========= */
+      /* ========= PÁG. Resumo consolidado (tabela) ========= */
       const HEADER_GAP = 28;
       const tableTopMargin = 14 + 70 + 12 + HEADER_GAP;
-
-      // colunas dos detalhes, derivadas das chaves de `answers`
-      const detailCols =
-        answers && answers.length
-          ? Array.from(new Set(answers.flatMap((a) => Object.keys(a ?? {})))).map(
-              (k) => ({ header: k, dataKey: k })
-            )
-          : [];
 
       doc.addPage();
       autoTable(doc as any, {
@@ -453,11 +518,7 @@ export default function ExportPDFButton({
           cellPadding: 6,
           lineColor: CARD_EDGE,
         },
-        headStyles: {
-          fillColor: [25, 118, 210],
-          textColor: "#ffffff",
-          fontStyle: "bold",
-        },
+        headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
         alternateRowStyles: { fillColor: "#fbfdff" },
         body: summaryRows,
         columns: [
@@ -483,50 +544,68 @@ export default function ExportPDFButton({
         },
       });
 
-      /* ========= PÁGs. 6+ — Detalhes ========= */
+      /* ========= PÁG. Respostas detalhadas (curadas) ========= */
+      const allKeys = answers && answers.length ? Array.from(new Set(answers.flatMap(a => Object.keys(a ?? {})))) : [];
+      const questionKeys = allKeys.filter(k => k.startsWith("q_") && !SENSITIVE_KEYS.has(k));
+      if (allKeys.includes("comments") && !SENSITIVE_KEYS.has("comments")) questionKeys.push("comments");
+
+      const detailCols = questionKeys.map((k) => ({ header: HEADER_MAP[k] ?? k, dataKey: k }));
+      const detailBody = answers.map((a) => {
+        const row: Record<string, any> = {};
+        questionKeys.forEach((k) => {
+          let v = (a as any)[k];
+          if (typeof v === "boolean") v = v ? "Sim" : "Não";
+          if (v == null || v === "") v = "—";
+          row[k] = v;
+        });
+        return row;
+      });
+
+      const colStyles: Record<string, any> = {};
+      questionKeys.forEach((k) => {
+        colStyles[k] = {
+          cellWidth: k === "comments" ? 220 : 120,
+          overflow: "linebreak",
+        };
+      });
+
       if (detailCols.length) {
         doc.addPage();
         autoTable(doc as any, {
           styles: {
             font: "helvetica",
-            fontSize: 9,
+            fontSize: 10,
             textColor: INK,
             cellPadding: 5,
             lineColor: CARD_EDGE,
           },
-          headStyles: {
-            fillColor: [37, 117, 252],
-            textColor: "#ffffff",
-            fontStyle: "bold",
-          },
-          body: answers,
+          headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold" },
+          body: detailBody,
           columns: detailCols,
+          columnStyles: colStyles,
+          tableWidth: pageW - marginX * 2,
           margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
           theme: "grid",
+          rowPageBreak: "auto",
           didDrawPage: () => {
             const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
             doc.setFont("helvetica", "bold");
             doc.setTextColor(INK);
             doc.setFontSize(14);
-            doc.text(
-              "Respostas detalhadas (sem identificação sensível)",
-              marginX,
-              sY + HEADER_GAP - 10
-            );
+            doc.text("Respostas detalhadas (sem identificação sensível)", marginX, sY + HEADER_GAP - 10);
             drawFooter(doc, pageW, pageH, marginX);
           },
         });
       }
 
-      // === SALVAR O PDF ===
-      const fileName = `Relatorio_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
+      // salvar
+      const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
       doc.save(fileName);
     } finally {
       setLoading(false);
     }
   }, [answers, kpi, summaryRows]);
 
-  // === RENDERIZAÇÃO DO BOTÃO ===
   return (
     <button
       type="button"
@@ -535,12 +614,11 @@ export default function ExportPDFButton({
       aria-busy={loading}
       className="inline-flex items-center rounded-xl px-4 py-2 font-medium text-white disabled:opacity-60"
       style={{
-        background:
-          "linear-gradient(90deg, var(--grad-left, #1976d2), var(--grad-right, #2575fc))",
-        boxShadow: "0 6px 16px rgba(25, 118, 210, 0.25)",
+        background: "linear-gradient(90deg, #1976d2, #2575fc)",
+        boxShadow: "0 6px 16px rgba(25,118,210,.25)",
       }}
     >
-      {loading ? "Gerando PDF..." : "Exportar PDF"}
+      {loading ? "Gerando PDF..." : "Exportar PDF (apresentação)"}
     </button>
   );
 }
