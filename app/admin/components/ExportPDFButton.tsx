@@ -15,6 +15,7 @@ type KPI = {
   glosaRecorrentePct: number;
   rxReworkPct: number;
 };
+
 type Answer = Record<string, any>;
 
 type Props = {
@@ -40,7 +41,10 @@ const CARD_EDGE = "#e9edf7";
 
 function formatNow(): string {
   const d = new Date();
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(d);
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(d);
 }
 
 function usableHeight(startY: number, pageH: number, bottomPadding = 40) {
@@ -52,7 +56,7 @@ function centeredStartY(startY: number, pageH: number, blockH: number) {
   return startY + offset;
 }
 
-// Carrega /logo.png como DataURL base64 (falhou? retorna null)
+// carrega /logo.png como DataURL
 async function fetchAsDataURL(path: string): Promise<string | null> {
   try {
     const res = await fetch(path);
@@ -70,7 +74,7 @@ async function fetchAsDataURL(path: string): Promise<string | null> {
 
 /* ===================== Cabeçalho/Rodapé ===================== */
 
-const TOP_GAP = 24; // respiro extra após o cabeçalho em TODAS as páginas
+const TOP_GAP = 24; // respiro extra após o header em todas as páginas
 
 function drawHeader(
   doc: jsPDF,
@@ -84,7 +88,7 @@ function drawHeader(
   doc.rect(0, 0, pageW, 6, "F");
 
   // card do header
-  const headerH = 70;
+  const headerH = 72;
   const cardX = marginX;
   const cardY = 14;
   const cardW = pageW - marginX * 2;
@@ -94,35 +98,40 @@ function drawHeader(
   doc.setLineWidth(1);
   doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
 
-  // título + data
-  const leftPad = 18;
-  const titleY = cardY + 26 + 20;
-  const DATE_GAP = 22;
+  // alinhar verticalmente texto e logo dentro do card
+  const centerY = cardY + headerH / 2;
 
+  // bloco texto (esquerda)
+  const leftPad = 18;
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(18);
+  const titleH = 18; // approx
+  const dateH = 10; // approx
+  const lineGap = 6;
+  const textBlockH = titleH + lineGap + dateH;
+  const titleY = centerY - textBlockH / 2 + titleH * 0.75; // baseline aproximada
+
   doc.text(title, cardX + leftPad, titleY);
 
   doc.setFont("helvetica", "normal");
   doc.setTextColor(INK_SOFT);
   doc.setFontSize(10);
-  doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, titleY + DATE_GAP);
+  doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, titleY + lineGap + 10);
 
-  // logo
+  // logo (direita), centralizado verticalmente
   if (logoDataUrl) {
     const targetW = 160;
     const targetH = 48;
     const padRight = 18;
-    const padTop = 10;
     const imgX = cardX + cardW - padRight - targetW;
-    const imgY = cardY + padTop;
+    const imgY = centerY - targetH / 2;
     try {
       doc.addImage(logoDataUrl, "PNG", imgX, imgY, targetW, targetH);
     } catch {}
   }
 
-  return cardY + headerH + 12 + TOP_GAP; // y de início do conteúdo com respiro extra
+  return cardY + headerH + 12 + TOP_GAP; // início do conteúdo com respiro
 }
 
 function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
@@ -174,7 +183,7 @@ function drawKpiCard(
   doc.text(value, x + 16, y + 58);
 }
 
-/* ===================== Distribuições / Micro-charts ===================== */
+/* ===================== Micro-charts helpers ===================== */
 
 type DistItem = { label: string; count: number; pct: string };
 const ROW_H = 20;
@@ -184,7 +193,7 @@ function measureBarBlock(lines: number) {
   return 8 + lines * (ROW_H + ROW_GAP);
 }
 
-// % entre respondentes; retorna também "unknownCount"
+// % entre respondentes
 function dist(
   answers: Answer[],
   field: keyof Answer,
@@ -225,7 +234,7 @@ function drawBarBlock(
   const barW = width * 0.6;
   const maxPct = Math.max(...items.map((i) => parseInt(i.pct) || 0), 1);
 
-  const filtered = items.filter((it) => it.count > 0); // não desenhar categorias vazias
+  const filtered = items.filter((it) => it.count > 0);
   filtered.forEach((it, idx) => {
     const rowY = y + idx * (ROW_H + ROW_GAP);
 
@@ -310,15 +319,22 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁGINA 1: Sumário + Resumo Executivo ========= */
+      /* ========= PÁGINA 1: Sumário (card) + Resumo Executivo (card) ========= */
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
-      // 1) Sumário (primeiro)
+      // Card do Sumário
+      const cardW = pageW - marginX * 2;
+      let y = startY;
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, y, cardW, 140, 12, 12, "FD");
+
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(16);
-      doc.text("Sumário", marginX, startY);
+      doc.text("Sumário", marginX + 18, y + 26);
 
       const tocItems = [
         "Visão Geral (KPIs)",
@@ -328,40 +344,33 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         "Resumo consolidado",
         "Respostas detalhadas",
       ];
+
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(12);
       doc.setTextColor(INK_SOFT);
-      let y = startY + 22;
+      doc.setFontSize(12);
+
+      let ly = y + 50;
       tocItems.forEach((label, i) => {
-        doc.text(`${i + 1}. ${label}`, marginX, y);
-        y += 16;
+        doc.text(`${i + 1}. ${label}`, marginX + 18, ly);
+        ly += 18;
       });
 
-      // 2) Resumo Executivo (na mesma página)
-      const insightsBoxTop = y + 10;
-      const insightsBoxH = 112; // altura do card; bullets quebram dentro
-      const contentBottom = insightsBoxTop + insightsBoxH;
-
-      // se não couber, pula p/ próxima página
-      if (contentBottom > pageH - 60) {
-        startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-        y = startY; // recomeça y
-      }
-
+      // Card do Resumo Executivo
+      const resBoxTop = y + 160;
+      const resBoxH = 120;
       doc.setDrawColor(CARD_EDGE);
       doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, y, pageW - marginX * 2, insightsBoxH, 12, 12, "FD");
+      doc.roundedRect(marginX, resBoxTop, cardW, resBoxH, 12, 12, "FD");
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
-      doc.text("Resumo Executivo — Principais insights", marginX + 18, y + 20);
+      doc.text("Resumo Executivo — Principais insights", marginX + 18, resBoxTop + 24);
 
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
       doc.setFontSize(12);
 
-      // bullets de insights
       const bullets = [
         `Amostra consolidada: ${kpi.total} respostas.`,
         `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
@@ -369,35 +378,36 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         )}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
         `Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.`,
       ];
-      let iy = y + 40;
-      const maxW = pageW - marginX * 2 - 36;
+      let by = resBoxTop + 46;
+      const maxW = cardW - 36;
       bullets.forEach((line) => {
-        doc.circle(marginX + 18, iy - 3, 2, "F");
-        doc.text(line, marginX + 28, iy, { maxWidth: maxW });
-        iy += 20;
+        doc.circle(marginX + 18, by - 3, 2, "F");
+        doc.text(line, marginX + 28, by, { maxWidth: maxW });
+        by += 20;
       });
 
-      /* ========= KPIs ========= */
+      /* ========= PÁGINA 2: Visão Geral (KPIs) ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
       const gap = 16;
-      const cardW = (pageW - marginX * 2 - gap * 3) / 4;
-      const cardH = 82;
+      const kpiCardW = (pageW - marginX * 2 - gap * 3) / 4;
+      const kpiCardH = 82;
 
-      let kpiY = centeredStartY(startY, pageH, 14 + cardH);
+      let kpiY = centeredStartY(startY, pageH, 14 + kpiCardH); // centraliza bloco
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
       doc.text("Visão Geral", marginX, kpiY + 2);
       kpiY += 14;
 
-      drawKpiCard(doc, marginX + 0 * (cardW + gap), kpiY, cardW, cardH, "Total de respostas", `${kpi.total}`, ACCENT);
-      drawKpiCard(doc, marginX + 1 * (cardW + gap), kpiY, cardW, cardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
-      drawKpiCard(doc, marginX + 2 * (cardW + gap), kpiY, cardW, cardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
-      drawKpiCard(doc, marginX + 3 * (cardW + gap), kpiY, cardW, cardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 0 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "Total de respostas", `${kpi.total}`, ACCENT);
+      drawKpiCard(doc, marginX + 1 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= No-show ========= */
+      /* ========= PÁG. 3 — No-show ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+
       const nsRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
       const nsSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]);
       const nsImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]);
@@ -421,8 +431,9 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       col2Y = drawBarBlock(doc, "Impacto financeiro mensal", nsImpact.items, col2X, col2Y, colW);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= Glosas ========= */
+      /* ========= PÁG. 4 — Glosas ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+
       const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
       const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]);
       const gWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]);
@@ -432,6 +443,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const gGridH = Math.max(gLeftH, gRightH);
 
       let gY = centeredStartY(startY, pageH, gGridH);
+
       let col1Yg = gY;
       col1Yg = drawBarBlock(doc, "Glosas recorrentes", gRec.items, col1X, col1Yg, colW);
       col1Yg += 18;
@@ -441,8 +453,9 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       col2Yg = drawBarBlock(doc, "Quem sofre mais", gWho.items, col2X, col2Yg, colW);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= Receitas Digitais ========= */
+      /* ========= PÁG. 5 — Receitas Digitais ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+
       const rxRw = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
       const rxDif = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]);
       const rxVal = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]);
@@ -461,9 +474,9 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       col2Yr = drawBarBlock(doc, "Valor em ferramenta de apoio", rxVal.items, col2X, col2Yr, colW);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= Resumo consolidado (subtabelas por pergunta) ========= */
+      /* ========= PÁG. 6 — Resumo consolidado (subtabelas por pergunta) ========= */
       const HEADER_GAP = 28;
-      const tableTopMargin = 14 + 70 + 12 + HEADER_GAP + TOP_GAP;
+      const tableTopMargin = 14 + 72 + 12 + HEADER_GAP + TOP_GAP;
 
       doc.addPage();
       const drawSectionHeader = () => {
@@ -483,7 +496,6 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         const body = items.filter((it) => it.count > 0).map((it) => ({ opcao: it.label, qtde: it.count, pct: it.pct }));
         if (answered === 0 && unknownCount === 0) continue;
 
-        // se aproximar do rodapé, nova página antes de desenhar a sub-tabela
         if (nextStartY > pageH - 200) {
           doc.addPage();
           drawSectionHeader();
@@ -503,7 +515,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
           columnStyles: {
             opcao: { cellWidth: 300, overflow: "linebreak" },
             qtde: { cellWidth: 60, halign: "right" },
-            pct: { cellWidth: 160, halign: "right" },
+            pct:  { cellWidth: 160, halign: "right" },
           },
           tableWidth: pageW - marginX * 2,
           margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
@@ -511,9 +523,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
           rowPageBreak: "auto",
           foot: [
             [
-              `Não respondido: ${unknownCount} (${((unknownCount / answers.length) * 100 || 0).toFixed(
-                0
-              )}% do total)`,
+              `Não respondido: ${unknownCount} (${((unknownCount / answers.length) * 100 || 0).toFixed(0)}% do total)`,
               "",
               "",
             ],
@@ -525,7 +535,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         nextStartY = (doc as any).lastAutoTable.finalY + 28;
       }
 
-      /* ========= Respostas detalhadas (curadas + chunk) ========= */
+      /* ========= PÁG. 7+ — Respostas detalhadas (curadas + chunk) ========= */
       const allKeys = answers.length ? Array.from(new Set(answers.flatMap((a) => Object.keys(a ?? {})))) : [];
       const questionKeys = allKeys.filter((k) => k.startsWith("q_") && !SENSITIVE_KEYS.has(k));
       const includeComments = allKeys.includes("comments") && !SENSITIVE_KEYS.has("comments");
@@ -562,7 +572,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
           columns: detailCols,
           columnStyles: colStyles,
           tableWidth: pageW - marginX * 2,
-          margin: { left: marginX, right: marginX, top: 14 + 70 + 12 + 28 + TOP_GAP, bottom: 26 },
+          margin: { left: marginX, right: marginX, top: 14 + 72 + 12 + 28 + TOP_GAP, bottom: 26 },
           theme: "grid",
           rowPageBreak: "auto",
           didDrawPage: () => {
@@ -583,7 +593,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [answers, kpi]);
+  }, [answers, kpi, summaryRows]);
 
   return (
     <button
