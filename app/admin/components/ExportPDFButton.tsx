@@ -7,7 +7,7 @@ import jsPDF, { jsPDFOptions } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as htmlToImage from "html-to-image";
 
-/* ===================== Tipos (iguais ao dashboard) ===================== */
+/* ===================== Tipos ===================== */
 
 type KPI = {
   total: number;
@@ -49,45 +49,62 @@ function formatNow(): string {
   }).format(d);
 }
 
-/** Pré-carrega o logo UMA vez (sincronismo nos headers) */
-function loadLogo(src: string): Promise<{ img: HTMLImageElement; ratio: number }> {
-  return new Promise((resolve, reject) => {
+/** Baixa o logo como DataURL + calcula o ratio (sem CORS) */
+async function loadLogoDataURL(path: string): Promise<{ dataUrl: string; ratio: number }> {
+  const res = await fetch(path, { cache: "no-store" });
+  if (!res.ok) throw new Error("Logo não encontrado");
+  const blob = await res.blob();
+
+  // Descobre dimensão para manter proporção
+  const ratio = await new Promise<number>((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
     const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () =>
-      resolve({
-        img,
-        ratio: (img.naturalWidth || 1) / (img.naturalHeight || 1),
-      });
+    img.onload = () => {
+      const r = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+      URL.revokeObjectURL(url);
+      resolve(r);
+    };
     img.onerror = reject;
-    img.src = src;
+    img.src = url;
   });
+
+  // Converte para DataURL
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result));
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+
+  return { dataUrl, ratio };
 }
 
-/** Converte nó (gráfico) para PNG; se falhar, retorna null */
-async function nodeToPNG(el?: HTMLElement | null, width = 1600): Promise<string | null> {
+/** Converte nó (gráfico) para PNG; se falhar, retorna null (sem quebrar) */
+async function nodeToPNG(el?: HTMLElement | null): Promise<string | null> {
   if (!el) return null;
   try {
+    const w =
+      el.scrollWidth || el.clientWidth || (el as HTMLElement).offsetWidth || 1200;
     return await htmlToImage.toPng(el, {
       cacheBust: true,
       pixelRatio: 2,
-      width,
+      width: w,
     });
   } catch {
     return null;
   }
 }
 
-/* ===================== Cabeçalho/Rodapé 100% SÍNCRONOS ===================== */
+/* ===================== Cabeçalho/Rodapé SÍNCRONOS ===================== */
 
 function drawHeaderSync(
   doc: jsPDF,
   pageW: number,
   marginX: number,
   title: string,
-  logo: { img: HTMLImageElement; ratio: number }
+  logo: { dataUrl: string; ratio: number }
 ): number {
-  // Faixa superior
+  // Faixa
   doc.setFillColor(BRAND_BLUE);
   doc.rect(0, 0, pageW, 6, "F");
 
@@ -98,13 +115,12 @@ function drawHeaderSync(
   doc.setLineWidth(1);
   doc.roundedRect(marginX, 14, pageW - marginX * 2, headerH, 10, 10, "FD");
 
-  // Logo proporcional (sem achatado)
+  // Logo proporcional (DataURL -> sempre síncrono e sem CORS)
   const logoH = 36;
   const logoW = Math.round(logoH * logo.ratio);
   const logoX = marginX + 16;
   const logoY = 14 + (headerH - logoH) / 2;
-  // Usa a imagem já carregada (sem await)
-  doc.addImage(logo.img, "PNG", logoX, logoY, logoW, logoH);
+  doc.addImage(logo.dataUrl, "PNG", logoX, logoY, logoW, logoH);
 
   // Título + data
   doc.setFont("helvetica", "bold");
@@ -117,7 +133,7 @@ function drawHeaderSync(
   doc.setFontSize(10);
   doc.text(`Gerado em ${formatNow()}`, logoX + logoW + 12, logoY + 38);
 
-  return 14 + headerH + 10; // y para começar o conteúdo
+  return 14 + headerH + 10;
 }
 
 function drawFooterSync(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
@@ -136,7 +152,7 @@ function drawFooterSync(doc: jsPDF, pageW: number, pageH: number, marginX: numbe
 
 function newPageSync(
   doc: jsPDF,
-  opts: { title: string; marginX: number; pageW: number; pageH: number; logo: { img: HTMLImageElement; ratio: number } }
+  opts: { title: string; marginX: number; pageW: number; pageH: number; logo: { dataUrl: string; ratio: number } }
 ) {
   doc.addPage();
   const startY = drawHeaderSync(doc, opts.pageW, opts.marginX, opts.title, opts.logo);
@@ -168,10 +184,10 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
   const onExport = useCallback(async () => {
     setLoading(true);
     try {
-      // Pré-carrega o logo uma única vez (evita await em didDrawPage)
-      const logo = await loadLogo(LOGO_SRC);
+      // Carrega logo como DataURL (uma vez, fora de didDrawPage)
+      const logo = await loadLogoDataURL(LOGO_SRC);
 
-      // PDF PAISAGEM
+      // PDF em PAISAGEM
       const options: jsPDFOptions = { unit: "pt", format: "a4", orientation: "landscape" };
       const doc = new jsPDF(options);
       const pageW = doc.internal.pageSize.getWidth();
@@ -179,7 +195,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       const marginX = 48;
       const reportTitle = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁG. 1: RESUMO (apenas KPIs) ========= */
+      /* ========= PÁG. 1 — KPIs ========= */
       let cursorY = drawHeaderSync(doc, pageW, marginX, reportTitle, logo);
       drawFooterSync(doc, pageW, pageH, marginX);
 
@@ -190,7 +206,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       cursorY += 14;
 
       const gap = 16;
-      const cardW = (pageW - marginX * 2 - gap * 3) / 4; // 4 KPIs em uma linha
+      const cardW = (pageW - marginX * 2 - gap * 3) / 4;
       const cardH = 78;
 
       drawKpiCard(doc, marginX + 0 * (cardW + gap), cursorY, cardW, cardH, "Total de respostas", `${kpi.total}`);
@@ -222,7 +238,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         `${kpi.rxReworkPct.toFixed(0)}%`
       );
 
-      /* ========= PÁG. 2: NO-SHOW ========= */
+      /* ========= PÁG. 2 — No-show ========= */
       cursorY = newPageSync(doc, { title: reportTitle, marginX, pageW, pageH, logo });
 
       doc.setFont("helvetica", "bold");
@@ -231,7 +247,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       doc.text("Distribuição — No-show relevante", marginX, cursorY);
       cursorY += 10;
 
-      const g1 = await nodeToPNG(chartRefs.noshowRef.current, 1600);
+      const g1 = await nodeToPNG(chartRefs.noshowRef.current);
       const chartH = pageH - cursorY - 36;
       if (g1) {
         doc.addImage(g1, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
@@ -242,7 +258,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       }
       drawFooterSync(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 3: GLOSAS ========= */
+      /* ========= PÁG. 3 — Glosas ========= */
       cursorY = newPageSync(doc, { title: reportTitle, marginX, pageW, pageH, logo });
 
       doc.setFont("helvetica", "bold");
@@ -251,7 +267,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       doc.text("Distribuição — Glosas (recorrência / interesse)", marginX, cursorY);
       cursorY += 10;
 
-      const g2 = await nodeToPNG(chartRefs.glosaRef.current, 1600);
+      const g2 = await nodeToPNG(chartRefs.glosaRef.current);
       if (g2) {
         doc.addImage(g2, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
       } else {
@@ -261,7 +277,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       }
       drawFooterSync(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 4: RECEITAS DIGITAIS ========= */
+      /* ========= PÁG. 4 — Receitas Digitais ========= */
       cursorY = newPageSync(doc, { title: reportTitle, marginX, pageW, pageH, logo });
 
       doc.setFont("helvetica", "bold");
@@ -270,7 +286,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       doc.text("Distribuição — Receitas Digitais (retrabalho / dificuldade / valor)", marginX, cursorY);
       cursorY += 10;
 
-      const g3 = await nodeToPNG(chartRefs.rxRef.current, 1600);
+      const g3 = await nodeToPNG(chartRefs.rxRef.current);
       if (g3) {
         doc.addImage(g3, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
       } else {
@@ -280,8 +296,8 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       }
       drawFooterSync(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 5: TABELA RESUMO ========= */
-      const tableTopMargin = 14 + 76 + 10 + 12; // espaço do header + respiro
+      /* ========= PÁG. 5 — Resumo (tabela) ========= */
+      const tableTopMargin = 14 + 76 + 10 + 12; // header + respiro
       doc.addPage();
       autoTable(doc as any, {
         styles: {
@@ -312,7 +328,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
         theme: "grid",
         didDrawPage: () => {
-          // 100% síncrono
+          // Síncrono: usa DataURL do logo
           const startY = drawHeaderSync(doc, pageW, marginX, reportTitle, logo);
           doc.setFont("helvetica", "bold");
           doc.setTextColor(INK);
@@ -322,7 +338,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         },
       });
 
-      /* ========= PÁGs. 6+: DETALHES ========= */
+      /* ========= PÁGs. 6+ — Detalhes ========= */
       const firstRow = answers[0] || {};
       const detailCols = Object.keys(firstRow).map((k) => ({ header: k, dataKey: k }));
       if (detailCols.length) {
@@ -355,7 +371,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         });
       }
 
-      // Salvar
+      // Salva
       const pad = (n: number) => String(n).padStart(2, "0");
       const d = new Date();
       const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(
