@@ -73,32 +73,29 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
   const onExport = useCallback(async () => {
     setLoading(true);
     try {
-      // --- Documento em paisagem ---
+      // A4 em paisagem
       const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
 
-      // Margens (lado, topo e rodapé)
-      const M = 40;
+      const M = 40; // margem
       const CONTENT_W = pageW - M * 2;
       const FOOTER_H = 22;
 
-      // Cursor vertical dentro da área útil
       let y = M;
 
-      // Utilitário: garante espaço antes de “blocos”
-      const ensure = (h: number) => {
-        if (y + h > pageH - M - FOOTER_H) {
-          addFooter();
-          doc.addPage();
-          y = M;
-          drawHeader(); // cabeçalho em cada página
-        }
+      const addFooter = () => {
+        const year = new Date().getFullYear();
+        const footer = `© ${year} NovuSys — Relatório gerado automaticamente`;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(INK_SOFT);
+        const w = doc.getTextWidth(footer);
+        doc.text(footer, pageW - M - w, pageH - 10);
       };
 
-      // Header (faixa + logo + títulos)
       const drawHeader = async () => {
-        // faixa superior fina
+        // faixa superior
         doc.setFillColor(BRAND_BLUE);
         doc.rect(0, 0, pageW, 6, "F");
 
@@ -108,7 +105,6 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         doc.setLineWidth(1);
         doc.roundedRect(M, 16, CONTENT_W, headerH, 10, 10, "FD");
 
-        // logo proporcional
         try {
           const { img, ratio } = await loadImage(LOGO_SRC);
           const logoH = 36;
@@ -131,7 +127,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
           doc.setFontSize(11);
           doc.text(`Gerado em ${formatNow()}`, logoX + logoW + 14, logoY + 42);
         } catch {
-          // Se o logo falhar, seguimos só com o título
+          // fallback sem logo
           doc.setFont("helvetica", "bold");
           doc.setTextColor(INK);
           doc.setFontSize(22);
@@ -145,20 +141,27 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         y = 16 + headerH + 16;
       };
 
-      const addFooter = () => {
-        const year = new Date().getFullYear();
-        const footer = `© ${year} NovuSys — Relatório gerado automaticamente`;
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
-        doc.setTextColor(INK_SOFT);
-        const w = doc.getTextWidth(footer);
-        doc.text(footer, pageW - M - w, pageH - 10);
+      // >>> a partir daqui: toda quebra usa await
+      const ensure = async (h: number) => {
+        if (y + h > pageH - M - FOOTER_H) {
+          addFooter();
+          doc.addPage();
+          y = M;
+          await drawHeader();
+        }
       };
 
-      // desenha 3 KPI cards (sem quebra interna)
-      const drawKPI = () => {
+      const sectionTitle = async (t: string) => {
+        await ensure(24);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text(t, M, y + 14);
+        y += 22;
+      };
+
+      const drawKPI = async () => {
         const H = 86;
-        ensure(H);
         const GAP = 16;
         const cardW = (CONTENT_W - GAP * 2) / 3;
 
@@ -166,17 +169,16 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
           doc.setDrawColor(CARD_EDGE);
           doc.setFillColor("#ffffff");
           doc.roundedRect(x, y, cardW, H, 10, 10, "FD");
-
           doc.setFont("helvetica", "bold");
           doc.setFontSize(12);
           doc.setTextColor(INK);
           doc.text(title, x + 14, y + 24);
-
           doc.setTextColor(BRAND_BLUE);
           doc.setFontSize(30);
           doc.text(value, x + 14, y + 58);
         };
 
+        await ensure(H);
         const X1 = M;
         const X2 = M + cardW + GAP;
         const X3 = M + (cardW + GAP) * 2;
@@ -187,8 +189,8 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
 
         y += H + 10;
 
-        ensure(H);
-        // terceira métrica (retrabalho)
+        // 3º KPI (retrabalho)
+        await ensure(H);
         doc.setDrawColor(CARD_EDGE);
         doc.setFillColor("#ffffff");
         doc.roundedRect(M, y, cardW, H, 10, 10, "FD");
@@ -203,24 +205,14 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         y += H + 18;
       };
 
-      const sectionTitle = (t: string) => {
-        ensure(24);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(INK);
-        doc.setFontSize(14);
-        doc.text(t, M, y + 14);
-        y += 22;
-      };
-
       const drawChartBlock = async (title: string, dataUrl: string | null, preferredH = 210) => {
         const h = preferredH;
-        ensure(h + 20);
-        sectionTitle(title);
+        await sectionTitle(title);
+        await ensure(h + 10);
 
         if (dataUrl) {
           doc.addImage(dataUrl, "PNG", M, y, CONTENT_W, h);
         } else {
-          // Placeholder com borda sólida (sem traço tracejado para evitar tipos)
           doc.setDrawColor(CARD_EDGE);
           doc.setLineWidth(1);
           doc.roundedRect(M, y, CONTENT_W, h, 10, 10);
@@ -228,11 +220,10 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         y += h + 20;
       };
 
-      // ========== Construção do PDF ==========
+      // ===== construção =====
       await drawHeader();
-      drawKPI();
+      await drawKPI();
 
-      // 3 gráficos / distribuições (cada um é um bloco atômico)
       const g1 = await nodeToPNG(chartRefs.noshowRef.current, 1400);
       await drawChartBlock("Distribuição — No-show relevante", g1);
 
@@ -242,9 +233,10 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       const g3 = await nodeToPNG(chartRefs.rxRef.current, 1400);
       await drawChartBlock("Distribuição — Receitas Digitais (retrabalho / dificuldade / valor)", g3);
 
-      // Tabela 1 — Resumo por pergunta
-      ensure(60);
-      sectionTitle("Resumo consolidado por pergunta");
+      // Tabela 1 — Resumo
+      await ensure(60);
+      await sectionTitle("Resumo consolidado por pergunta");
+
       const summaryColumns = [
         { header: "Pergunta", dataKey: "pergunta" },
         ...Object.keys(
@@ -277,13 +269,10 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         columns: summaryColumns,
         theme: "grid",
         pageBreak: "avoid",
-        didDrawPage: (data: any) => {
-          // cabeçalho + rodapé em todas as páginas da tabela
-          if (data.pageNumber > 1) {
-            // header simples (faixa)
-            doc.setFillColor(BRAND_BLUE);
-            doc.rect(0, 0, pageW, 6, "F");
-          }
+        didDrawPage: () => {
+          // header/rodapé a cada página gerada pela tabela
+          doc.setFillColor(BRAND_BLUE);
+          doc.rect(0, 0, pageW, 6, "F");
           const year = new Date().getFullYear();
           const footer = `© ${year} NovuSys — Relatório gerado automaticamente`;
           doc.setFont("helvetica", "normal");
@@ -294,11 +283,12 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         },
       });
 
-      // Tabela 2 — Detalhes (começa em nova página)
+      // Tabela 2 — Detalhes
+      addFooter();
       doc.addPage();
       y = M;
       await drawHeader();
-      sectionTitle("Respostas detalhadas (sem identificação sensível)");
+      await sectionTitle("Respostas detalhadas (sem identificação sensível)");
 
       const firstRow = answers[0] || {};
       const detailCols =
@@ -327,11 +317,9 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         columns: detailCols,
         theme: "grid",
         pageBreak: "auto",
-        didDrawPage: (data: any) => {
-          if (data.pageNumber > 1) {
-            doc.setFillColor(BRAND_BLUE);
-            doc.rect(0, 0, pageW, 6, "F");
-          }
+        didDrawPage: () => {
+          doc.setFillColor(BRAND_BLUE);
+          doc.rect(0, 0, pageW, 6, "F");
           const year = new Date().getFullYear();
           const footer = `© ${year} NovuSys — Relatório gerado automaticamente`;
           doc.setFont("helvetica", "normal");
@@ -342,7 +330,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         },
       });
 
-      // Nome do arquivo
+      // salvar
       const pad = (n: number) => String(n).padStart(2, "0");
       const d = new Date();
       const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(
