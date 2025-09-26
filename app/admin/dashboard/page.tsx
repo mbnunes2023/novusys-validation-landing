@@ -114,21 +114,38 @@ export default function AdminDashboard() {
         />
       </div>
 
-      {/* KPIs rápidos on-screen */}
-      <section className="grid md:grid-cols-3 gap-4">
-        <div className="card">
-          <div className="card-title">Total de respostas</div>
-          <div className="text-3xl font-extrabold mt-2">{kpi.total}</div>
-        </div>
-        <div className="card">
-          <div className="card-title">% no-show relevante</div>
-          <div className="text-3xl font-extrabold mt-2">{kpi.noshowYesPct.toFixed(0)}%</div>
-        </div>
-        <div className="card">
-          <div className="card-title">% glosas recorrentes</div>
-          <div className="text-3xl font-extrabold mt-2">{kpi.glosaRecorrentePct.toFixed(0)}%</div>
-        </div>
-      </section>
+      {/* === KPIs ===================================================== */}
+<section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+  {/* Total */}
+  <div className="card">
+    <div className="text-lg font-bold text-slate-900">Total de respostas</div>
+    <div className="mt-2 text-3xl font-extrabold text-slate-900">{kpi.total}</div>
+  </div>
+
+  {/* % No-show relevante */}
+  <div className="card">
+    <div className="text-lg font-bold text-slate-900">% no-show relevante</div>
+    <div className="mt-2 text-3xl font-extrabold text-[var(--brand-1)]">
+      {kpi.noshowYesPct.toFixed(0)}%
+    </div>
+  </div>
+
+  {/* % Glosas recorrentes */}
+  <div className="card">
+    <div className="text-lg font-bold text-slate-900">% glosas recorrentes</div>
+    <div className="mt-2 text-3xl font-extrabold text-[var(--brand-1)]">
+      {kpi.glosaRecorrentePct.toFixed(0)}%
+    </div>
+  </div>
+
+  {/* % Receitas Digitais (retrabalho) */}
+  <div className="card">
+    <div className="text-lg font-bold text-slate-900">% receitas geram retrabalho</div>
+    <div className="mt-2 text-3xl font-extrabold text-[var(--brand-1)]">
+      {kpi.rxReworkPct.toFixed(0)}%
+    </div>
+  </div>
+</section>
 
       {/* “Áreas” dos gráficos — os componentes de gráfico podem ser adicionados aqui */}
       <section className="card">
