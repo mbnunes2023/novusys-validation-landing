@@ -32,11 +32,9 @@ type Answer = {
   consent_contact: boolean | null;
   consent: boolean | null;
 
-  // filtros
   clinic_size: "Pequeno" | "Médio" | "Grande" | null;
   doctor_role: "Geriatra" | "Dermatologista" | "Ortopedista" | "Outra" | null;
 
-  // survey
   q_noshow_relevance: string | null;
   q_noshow_has_system: string | null;
   q_noshow_financial_impact: string | null;
@@ -56,14 +54,25 @@ type Answer = {
 
 const BRAND = "#1976d2";
 
-function isoToDate(d: string) {
-  // tratar como UTC puro
-  const x = new Date(d);
-  return new Date(Date.UTC(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate()));
-}
-
 function trunc(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isoToDate(d: string) {
+  // normaliza para data (sem hora) em local time
+  const x = new Date(d);
+  return new Date(x.getFullYear(), x.getMonth(), x.getDate());
+}
+
+function parseBRDate(s: string): Date | null {
+  // dd/mm/aaaa
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s?.trim() ?? "");
+  if (!m) return null;
+  const dd = Number(m[1]);
+  const mm = Number(m[2]) - 1;
+  const yy = Number(m[3]);
+  const d = new Date(yy, mm, dd);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 type Dist = Array<{ label: string; count: number }>;
@@ -82,9 +91,17 @@ function distribution(
   return options.map((o) => ({ label: o, count: map.get(o) || 0 }));
 }
 
+/* ========== Aux: renderizar somente após montar no cliente (evita crash do Recharts em SSR) ========== */
+function NoSSR({ children, height = 180 }: { children: React.ReactNode; height?: number }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  if (!ready) return <div style={{ height }} />;
+  return <>{children}</>;
+}
+
 /* ============================ Componentes base ============================ */
 
-// KPI Donut com valor central e mini legenda
+// KPI Donut
 function KpiDonut({ title, valuePct }: { title: string; valuePct: number }) {
   const v = Math.max(0, Math.min(100, Math.round(valuePct)));
   const data = [
@@ -95,22 +112,24 @@ function KpiDonut({ title, valuePct }: { title: string; valuePct: number }) {
     <div className="card">
       <div className="text-sm font-semibold text-slate-700 mb-1">{title}</div>
       <div className="relative h-[120px] w-full">
-        <ResponsiveContainer>
-          <PieChart>
-            <Pie
-              data={data}
-              innerRadius={42}
-              outerRadius={56}
-              dataKey="value"
-              startAngle={90}
-              endAngle={-270}
-              stroke="none"
-            >
-              <Cell fill={BRAND} />
-              <Cell fill="#e8f0fe" />
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
+        <NoSSR height={120}>
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie
+                data={data}
+                innerRadius={42}
+                outerRadius={56}
+                dataKey="value"
+                startAngle={90}
+                endAngle={-270}
+                stroke="none"
+              >
+                <Cell fill={BRAND} />
+                <Cell fill="#e8f0fe" />
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+        </NoSSR>
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-3xl font-extrabold text-[var(--brand-1)]">{v}%</div>
         </div>
@@ -129,7 +148,7 @@ function KpiDonut({ title, valuePct }: { title: string; valuePct: number }) {
   );
 }
 
-// Barras horizontais com eixos/ticks, rótulos de valor e % e tooltip
+// Barras horizontais com eixos/ticks, rótulos e tooltip
 function DistBar({ title, data }: { title: string; data: Dist }) {
   const total = data.reduce((s, d) => s + d.count, 0);
   const chartData = data.map((d) => ({
@@ -138,7 +157,7 @@ function DistBar({ title, data }: { title: string; data: Dist }) {
     pct: total ? Math.round((d.count / total) * 100) : 0,
   }));
   const max = Math.max(1, ...chartData.map((d) => d.value));
-  const tickCount = Math.min(5, Math.max(3, max)); // 3–5
+  const tickCount = Math.min(5, Math.max(3, max));
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -147,39 +166,40 @@ function DistBar({ title, data }: { title: string; data: Dist }) {
         <div className="text-xs text-slate-500">N={total}</div>
       </div>
       <div className="h-[180px]">
-        <ResponsiveContainer>
-          <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 12, top: 8, bottom: 8 }}>
-            <CartesianGrid stroke="#eef2f9" horizontal={false} />
-            <XAxis
-              type="number"
-              domain={[0, max]}
-              tickCount={tickCount}
-              tick={{ fontSize: 11, fill: "#64748b" }}
-              stroke="#cbd5e1"
-            />
-            <YAxis
-              type="category"
-              dataKey="name"
-              width={140}
-              tick={{ fontSize: 12, fill: "#334155" }}
-              stroke="#cbd5e1"
-            />
-            <Tooltip
-              cursor={{ fill: "#f8fafc" }}
-              formatter={(value: any, _n, e: any) => [`${value} (${e?.payload?.pct ?? 0}%)`, "Respostas"]}
-              labelFormatter={(label) => label}
-            />
-            <Bar dataKey="value" radius={[6, 6, 6, 6]} fill={BRAND}>
-              <LabelList
-                dataKey="value"
-                position="right"
-                formatter={(v: number, _n: any, e: any) => `${v} (${e.payload.pct}%)`}
-                className="fill-slate-700"
-                style={{ fontSize: 11 }}
+        <NoSSR>
+          <ResponsiveContainer>
+            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 12, top: 8, bottom: 8 }}>
+              <CartesianGrid stroke="#eef2f9" horizontal={false} />
+              <XAxis
+                type="number"
+                domain={[0, max]}
+                tickCount={tickCount}
+                tick={{ fontSize: 11, fill: "#64748b" }}
+                stroke="#cbd5e1"
               />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={140}
+                tick={{ fontSize: 12, fill: "#334155" }}
+                stroke="#cbd5e1"
+              />
+              <Tooltip
+                cursor={{ fill: "#f8fafc" }}
+                formatter={(value: any, _n, e: any) => [`${value} (${e?.payload?.pct ?? 0}%)`, "Respostas"]}
+                labelFormatter={(label) => label}
+              />
+              <Bar dataKey="value" radius={[6, 6, 6, 6]} fill={BRAND}>
+                <LabelList
+                  dataKey="value"
+                  position="right"
+                  formatter={(v: number, _n: any, e: any) => `${v} (${e.payload.pct}%)`}
+                  style={{ fontSize: 11, fill: "#334155" }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </NoSSR>
       </div>
     </div>
   );
@@ -235,31 +255,26 @@ export default function AdminDashboard() {
       from = new Date(now);
       from.setDate(from.getDate() - (days - 1));
     }
-    if (customFrom && customTo) {
-      const [df, dt] = customFrom.split("/"); // dd/mm/aaaa
-      const [tf, tt] = customTo.split("/");
-      const f = new Date(Number(df?.split?.("/")[2] || df), Number(df?.split?.("/")[1]) - 1, Number(df?.split?.("/")[0]));
-      const t = new Date(Number(tt?.split?.("/")[2] || tt), Number(tt?.split?.("/")[1]) - 1, Number(tt?.split?.("/")[0]));
-      if (!isNaN(f.getTime()) && !isNaN(t.getTime())) {
-        from = trunc(f);
-        to = trunc(t);
-      }
+
+    // intervalo custom (só se ambas válidas)
+    const f = customFrom ? parseBRDate(customFrom) : null;
+    const t = customTo ? parseBRDate(customTo) : null;
+    if (f && t) {
+      from = trunc(f);
+      to = trunc(t);
     }
 
     const sizeActive = sizes.size > 0;
     const roleActive = roles.size > 0;
 
     return answers.filter((a) => {
-      // data
       if (from && to) {
         const d = isoToDate(a.created_at);
         if (d < from || d > to) return false;
       }
-      // tamanho
       if (sizeActive && !sizes.has(a.clinic_size)) return false;
-      // role
       if (roleActive && !roles.has(a.doctor_role)) return false;
-      // respondente
+
       const hasContact = (a.consent_contact || a.consent) ? true : false;
       if (respondent === "Com contato" && !hasContact) return false;
       if (respondent === "Sem contato" && hasContact) return false;
@@ -282,7 +297,7 @@ export default function AdminDashboard() {
     };
   }, [filtered]);
 
-  // Distros (já com os rótulos do seu formulário)
+  // Distros
   const distNoshow = useMemo(
     () => ({
       relev: distribution(filtered, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]),
@@ -333,9 +348,8 @@ export default function AdminDashboard() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <ExportPDFButton
-          // passa dados filtrados para o PDF
           kpi={kpi}
-          summaryRows={[]} // compatibilidade do componente
+          summaryRows={[]}
           answers={filtered}
         />
       </div>
@@ -492,7 +506,7 @@ export default function AdminDashboard() {
         </div>
       </section>
 
-      {/* LISTA DE RESPONDENTES (para contato) */}
+      {/* LISTA DE RESPONDENTES */}
       <section className="card">
         <h2 className="card-title mb-4">Respondentes (dados para contato, quando autorizados)</h2>
         <div className="space-y-2">
@@ -534,12 +548,7 @@ export default function AdminDashboard() {
 }
 
 /* ============================ Estilos utilitários ============================
-
-No seu globals.css (ou equivalente), você já usa utilitários Tailwind.
-Certifique-se de ter algo como:
-
 .card { @apply rounded-2xl border border-slate-200 bg-white p-4; }
 .card-title { @apply text-lg font-bold text-slate-900; }
 .input { @apply px-3 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand-1)]; }
-
-================================================================== */
+============================================================================= */
