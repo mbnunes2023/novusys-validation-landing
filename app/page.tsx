@@ -43,20 +43,21 @@ export default function Page() {
     gradient: "linear-gradient(135deg,#1976d2 0%,#6a11cb 50%,#2575fc 100%)",
   };
 
-  // 1) NOVO: controle para só exibir o formulário após clique
+  // controla a exibição do formulário
   const [showForm, setShowForm] = useState(false);
   const formRef = useRef<HTMLDivElement | null>(null);
 
-  // Se entrar com hash #form, já abre direto
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hash === "#form") {
       setShowForm(true);
-      // dar tempo de renderizar
-      setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+      setTimeout(
+        () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+        50
+      );
     }
   }, []);
 
-  // 2) Estado do formulário
+  // estado do formulário
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,8 +87,8 @@ export default function Page() {
     consent: false,
   });
 
+  // (mantido para eventuais métricas futuras; não exibimos mais o gráfico)
   const [stats, setStats] = useState<{ name: string; value: number }[]>([]);
-
   useEffect(() => {
     const fetchStats = async () => {
       const { data, error } = await supabase
@@ -109,7 +110,7 @@ export default function Page() {
         setStats(chart);
       }
     };
-    fetchStats();
+    if (submitted) fetchStats();
   }, [submitted]);
 
   const canSubmit = useMemo(() => {
@@ -190,50 +191,26 @@ export default function Page() {
     </div>
   );
 
-  /* ========= TELA DE AGRADECIMENTO ========= */
+  /* ========= TELA DE AGRADECIMENTO — ENXUTA ========= */
   if (submitted) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-white to-slate-50">
-        <div className="max-w-4xl mx-auto p-6">
-          <header className="mb-8">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white shadow-sm">
-              <span className="text-xs">MVP • Pesquisa de Validação</span>
-            </div>
-            <h1 className="text-3xl md:text-4xl font-bold mt-2">
+        <div className="max-w-4xl mx-auto px-6 py-14">
+          {/* Mensagem centralizada (sem selo, sem gráfico, sem botão extra) */}
+          <div className="min-h-[50vh] flex flex-col items-center justify-center text-center">
+            <h1 className="text-4xl md:text-5xl font-extrabold">
               Obrigado pela resposta!
             </h1>
-          </header>
-
-          <section className="mb-10 bg-white rounded-2xl p-6 border shadow-sm">
-            <h2 className="text-xl font-semibold mb-2">
-              Visão rápida das respostas (beta)
-            </h2>
-            <p className="text-slate-600 mb-4">
-              Distribuição das respostas para a pergunta:{" "}
-              <span className="font-medium">“No-show é relevante?”</span>
+            <p className="mt-3 text-slate-600 max-w-2xl">
+              Sua contribuição ajuda a priorizar um MVP útil para clínicas e consultórios.
             </p>
-            <div className="w-full h-72 rounded-xl border p-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill={brand.color} radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
-
-          <div className="flex gap-3">
-            <a href="/" className="btn btn-outline">
-              Enviar outra resposta
-            </a>
           </div>
 
           <footer className="mt-10 text-xs text-slate-500 text-center">
-            © {new Date().getFullYear()} <span className="font-medium">NovuSys</span> — Todos os direitos reservados.
-            {" "}<a href="/privacy" className="underline">Política de privacidade</a>
+            © {new Date().getFullYear()} <span className="font-medium">NovuSys</span> — Todos os direitos reservados.{" "}
+            <a href="/privacy" className="underline">
+              Política de privacidade
+            </a>
           </footer>
         </div>
       </div>
@@ -261,7 +238,6 @@ export default function Page() {
               style={{ background: "white" }}
               onClick={() => {
                 setShowForm(true);
-                // rola até o início do formulário
                 setTimeout(() => {
                   formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
                 }, 30);
@@ -273,7 +249,7 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ===== Só renderiza o formulário após o clique ===== */}
+      {/* Formulário só aparece após clicar */}
       {showForm ? (
         <div ref={formRef} id="form" className="max-w-4xl mx-auto p-6 -mt-6">
           <form onSubmit={handleSubmit} className="space-y-8">
@@ -539,10 +515,7 @@ export default function Page() {
             {error && <div className="text-red-600 text-sm">{error}</div>}
 
             {/* Botão Enviar centralizado */}
-            <div
-              className="actions mt-6"
-              style={{ justifyContent: "center", gap: 12 }}
-            >
+            <div className="actions mt-6" style={{ justifyContent: "center", gap: 12 }}>
               <button
                 disabled={!canSubmit || submitting}
                 className="btn btn-primary"
