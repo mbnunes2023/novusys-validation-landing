@@ -20,7 +20,7 @@ type Answer = Record<string, any>;
 
 type Props = {
   kpi: KPI;
-  summaryRows: Array<Record<string, number | string>>; // compat
+  summaryRows: Array<Record<string, number | string>>; // mantido por compatibilidade
   answers: Answer[];
   chartRefs?: {
     noshowRef: React.RefObject<HTMLDivElement>;
@@ -118,8 +118,8 @@ function drawHeader(
 
   // logo (direita), centralizado verticalmente
   if (logoDataUrl) {
-    const targetW = 160;
-    const targetH = 48;
+    const targetW = 170; // ligeiramente maior
+    const targetH = 50;
     const padRight = 18;
     const imgX = cardX + cardW - padRight - targetW;
     const imgY = centerY - targetH / 2;
@@ -213,48 +213,7 @@ function dist(
   return { items, answered, unknownCount: unknown };
 }
 
-function drawBarBlock(
-  doc: jsPDF,
-  title: string,
-  items: DistItem[],
-  x: number,
-  y: number,
-  width: number
-) {
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(INK);
-  doc.setFontSize(13);
-  doc.text(title, x, y);
-  y += 8;
-
-  const labelW = width * 0.4;
-  const barW = width * 0.6;
-  const maxPct = Math.max(...items.map((i) => parseInt(i.pct) || 0), 1);
-
-  const filtered = items.filter((it) => it.count > 0);
-  filtered.forEach((it, idx) => {
-    const rowY = y + idx * (ROW_H + ROW_GAP);
-
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(INK_SOFT);
-    doc.setFontSize(11);
-    const label = `${it.label} — ${it.count} (${it.pct})`;
-    doc.text(label, x, rowY + 13);
-
-    doc.setDrawColor(CARD_EDGE);
-    doc.setFillColor("#fff");
-    doc.roundedRect(x + labelW, rowY, barW, ROW_H, 6, 6, "FD");
-
-    const pct = parseInt(it.pct) || 0;
-    const w = (pct / maxPct) * (barW - 10);
-    doc.setFillColor(BRAND_BLUE);
-    doc.roundedRect(x + labelW + 2, rowY + 2, Math.max(w, 2), ROW_H - 4, 5, 5, "F");
-  });
-
-  return y + filtered.length * (ROW_H + ROW_GAP);
-}
-
-/* ======== Versão compacta (para caber tudo na Página 2) ======== */
+/* ======== Versão compacta (3×3 da página 2) ======== */
 const CROW_H = 14;
 const CROW_GAP = 4;
 
@@ -330,25 +289,13 @@ const HEADER_MAP: Record<string, string> = {
   comments: "Observações",
 };
 
-const QUESTIONS: Array<{ key: keyof Answer; label: string; options: string[] }> = [
-  { key: "q_noshow_relevance", label: "No-show relevante?", options: ["Sim", "Não", "Parcialmente"] },
-  { key: "q_noshow_has_system", label: "Sistema p/ no-show?", options: ["Sim", "Não"] },
-  { key: "q_noshow_financial_impact", label: "Impacto financeiro", options: ["Baixo impacto", "Médio impacto", "Alto impacto"] },
-  { key: "q_glosa_is_problem", label: "Glosas recorrentes?", options: ["Sim", "Não", "Às vezes"] },
-  { key: "q_glosa_interest", label: "Checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
-  { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
-  { key: "q_rx_rework", label: "Receitas geram retrabalho?", options: ["Sim", "Não", "Raramente"] },
-  { key: "q_rx_elderly_difficulty", label: "Pacientes têm dificuldade?", options: ["Sim", "Não", "Em parte"] },
-  { key: "q_rx_tool_value", label: "Valor em ferramenta de apoio", options: ["Sim", "Não", "Talvez"] },
-];
-
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
 
-/* ===================== Consolidação por tema ===================== */
+/* ===================== Consolidado por tema ===================== */
 
 type SectionKey = "noshow" | "glosas" | "receitas";
 const SECTIONS: Record<
@@ -473,11 +420,13 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const TITLE_GAP = 26;
       const LINE = 18;
 
-      // SUMÁRIO (texto preto)
+      // SUMÁRIO (preto)
       const tocItems = [
         "Visão Geral (KPIs + distribuições)",
         "Consolidado por tema",
         "Respostas detalhadas",
+        "Comentários",
+        "Identificação (opcional)",
       ];
       const summaryTitleH = 16;
       const summaryListH = tocItems.length * LINE;
@@ -499,14 +448,12 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.text("Sumário", marginX + PAD_X, y + TITLE_GAP);
 
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK); // <- preto
+      doc.setTextColor(INK);
       doc.setFontSize(12);
 
       let listY = y + TITLE_GAP + summaryTitleH + 8;
       tocItems.forEach((label, i) => {
-        doc.text(`${i + 1}. ${label}`, marginX + PAD_X, listY, {
-          maxWidth: CARD_W - PAD_X * 2,
-        });
+        doc.text(`${i + 1}. ${label}`, marginX + PAD_X, listY, { maxWidth: CARD_W - PAD_X * 2 });
         listY += LINE;
       });
 
@@ -684,6 +631,96 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
             doc.setFontSize(14);
             const suffix = groups.length > 1 ? ` — parte ${gi + 1}/${groups.length}` : "";
             doc.text(detailTitle + suffix, marginX, sY + 28 - 10);
+            drawFooter(doc, pageW, pageH, marginX);
+          },
+        });
+      }
+
+      /* ========= COMENTÁRIOS (Apêndice curado) ========= */
+      const comments: string[] = answers
+        .map((a) => (a.comments || "").toString().trim())
+        .filter((t) => t.length > 0);
+
+      if (comments.length) {
+        doc.addPage();
+        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text("Comentários (texto livre)", marginX, sY + 18);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK);
+        doc.setFontSize(12);
+
+        let yC = sY + 40;
+        const maxW = pageW - marginX * 2 - 20;
+        const lineH = 18;
+
+        comments.forEach((c, i) => {
+          const bullet = `• ${c}`;
+          const lines = doc.splitTextToSize(bullet, maxW);
+          // quebra de página se necessário
+          if (yC + lines.length * lineH > pageH - 60) {
+            drawFooter(doc, pageW, pageH, marginX);
+            doc.addPage();
+            const sY2 = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(14);
+            doc.text("Comentários (continuação)", marginX, sY2 + 18);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(INK);
+            doc.setFontSize(12);
+            yC = sY2 + 40;
+          }
+          doc.text(lines, marginX + 10, yC);
+          yC += lines.length * lineH + 8;
+        });
+
+        drawFooter(doc, pageW, pageH, marginX);
+      }
+
+      /* ========= IDENTIFICAÇÃO (se autorizado) ========= */
+      const idRows = answers
+        .filter((a) => a.consent_contact === true || a.consent === true)
+        .map((a) => ({
+          nome: (a.doctor_name || "").toString().trim() || "—",
+          crm: (a.crm || "").toString().trim() || "—",
+          contato: (a.contact || "").toString().trim() || "—",
+        }))
+        .filter((r) => r.nome !== "—" || r.crm !== "—" || r.contato !== "—");
+
+      if (idRows.length) {
+        doc.addPage();
+        const headerGap = 28;
+        const topY = 14 + 72 + 12 + headerGap + TOP_GAP;
+
+        autoTable(doc as any, {
+          startY: topY,
+          styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+          headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+          body: idRows,
+          columns: [
+            { header: "Nome", dataKey: "nome" },
+            { header: "CRM", dataKey: "crm" },
+            { header: "Contato (e-mail / WhatsApp)", dataKey: "contato" },
+          ],
+          tableWidth: pageW - marginX * 2,
+          margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
+          theme: "grid",
+          rowPageBreak: "auto",
+          didDrawPage: () => {
+            const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(INK);
+            doc.setFontSize(14);
+            doc.text("Identificação (somente com autorização de contato)", marginX, sY + 18);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(INK_SOFT);
+            doc.setFontSize(11);
+            doc.text("Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.", marginX, sY + 36);
             drawFooter(doc, pageW, pageH, marginX);
           },
         });
