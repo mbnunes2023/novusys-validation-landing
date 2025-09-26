@@ -1,23 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../../lib/supabaseClient";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "../../lib/supabaseClient";
+import ExportPDFButton from "../components/ExportPDFButton";
+
 import {
   ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, Legend
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts";
 
-// types conforme seu formulário
-type Row = {
+/* ===== Tipos ===== */
+type AnswerRow = {
   id: string;
   created_at: string;
 
   doctor_name: string | null;
   crm: string | null;
   contact: string | null;
-  consent_contact: boolean | null;
 
   doctor_role: string | null;
   clinic_size: string | null;
@@ -35,346 +42,253 @@ type Row = {
   q_rx_tool_value: string | null;
 
   comments: string | null;
-  consent: boolean | null;
 };
 
+/* Paleta/brand para gráficos */
 const BRAND = {
-  color: "#1976d2",
+  bar: "#1976d2",
+  barAlt: "#6a11cb",
   gradient: "linear-gradient(135deg,#1976d2 0%,#6a11cb 50%,#2575fc 100%)",
 };
-const PIE_COLORS = ["#1976d2", "#6a11cb", "#2575fc", "#0ea5e9", "#22c55e", "#f59e0b"];
+const PIE_COLORS = ["#1976d2", "#6a11cb", "#2575fc", "#60a5fa", "#93c5fd"];
 
+/* ===== Página ===== */
 export default function AdminDashboard() {
-  const router = useRouter();
-  const [rows, setRows] = useState<Row[]>([]);
+  const [answers, setAnswers] = useState<AnswerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // filtros simples
-  const [roleFilter, setRoleFilter] = useState("");
-  const [sizeFilter, setSizeFilter] = useState("");
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
+  // refs para capturar imagens dos gráficos no PDF
+  const noshowRef = useRef<HTMLDivElement>(null);
+  const glosaRef = useRef<HTMLDivElement>(null);
+  const rxRef = useRef<HTMLDivElement>(null);
 
-  // protege rota
+  /* ==== Fetch Supabase ==== */
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) router.replace("/admin");
-    });
-  }, [router]);
-
-  // carrega dados
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true); setErr(null);
+    let mounted = true;
+    (async () => {
       try {
+        setLoading(true);
         const { data, error } = await supabase
           .from("validation_responses")
           .select("*")
           .order("created_at", { ascending: false });
         if (error) throw error;
-        setRows((data ?? []) as Row[]);
+        if (mounted) setAnswers((data || []) as AnswerRow[]);
       } catch (e: any) {
-        setErr(e.message ?? "Erro ao carregar dados.");
+        setErr(e.message || "Falha ao carregar respostas.");
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
+    })();
+    return () => {
+      mounted = false;
     };
-    fetchData();
   }, []);
 
-  // aplica filtros
-  const filtered = useMemo(() => {
-    return rows.filter(r => {
-      const okRole = roleFilter ? r.doctor_role === roleFilter : true;
-      const okSize = sizeFilter ? r.clinic_size === sizeFilter : true;
+  /* ==== Helpers para agregação ==== */
+  const countByField = (arr: AnswerRow[], field: keyof AnswerRow) =>
+    arr.reduce<Record<string, number>>((acc, r) => {
+      const v = (r[field] as string) || "—";
+      acc[v] = (acc[v] || 0) + 1;
+      return acc;
+    }, {});
 
-      const date = r.created_at ? new Date(r.created_at) : null;
-      const okFrom = from ? (date ? date >= new Date(from) : false) : true;
-      const okTo = to ? (date ? date <= new Date(to + "T23:59:59") : false) : true;
+  const toChartArray = (obj: Record<string, number>) =>
+    Object.entries(obj).map(([name, value]) => ({ name, value }));
 
-      return okRole && okSize && okFrom && okTo;
-    });
-  }, [rows, roleFilter, sizeFilter, from, to]);
+  /* ==== KPIs ==== */
+  const kpi = useMemo(() => {
+    const total = answers.length;
+    const noshowYes = answers.filter((a) => a.q_noshow_relevance === "Sim").length;
+    const glosaRec = answers.filter((a) => a.q_glosa_is_problem === "Sim").length;
+    const rxRework = answers.filter((a) => a.q_rx_rework === "Sim").length;
+    return {
+      total,
+      noshowYesPct: total ? (noshowYes / total) * 100 : 0,
+      glosaRecorrentePct: total ? (glosaRec / total) * 100 : 0,
+      rxReworkPct: total ? (rxRework / total) * 100 : 0,
+    };
+  }, [answers]);
 
-  // helpers de contagem
-  const dist = (arr: any[], key: keyof Row) => {
-    const m = new Map<string, number>();
-    for (const r of arr) {
-      const k = (r[key] ?? "—") as string;
-      m.set(k, (m.get(k) ?? 0) + 1);
-    }
-    return Array.from(m.entries()).map(([name, value]) => ({ name, value }));
-  };
+  /* ==== Tabela-resumo (para PDF) ==== */
+  const summaryRows = useMemo(() => {
+    return [
+      { pergunta: "No-show relevante?", ...countByField(answers, "q_noshow_relevance") },
+      { pergunta: "Tem sistema para no-show?", ...countByField(answers, "q_noshow_has_system") },
+      { pergunta: "Impacto financeiro", ...countByField(answers, "q_noshow_financial_impact") },
+      { pergunta: "Glosas recorrentes?", ...countByField(answers, "q_glosa_is_problem") },
+      { pergunta: "Checagem antes do envio", ...countByField(answers, "q_glosa_interest") },
+      { pergunta: "Quem sofre mais", ...countByField(answers, "q_glosa_who_suffers") },
+      { pergunta: "Receitas geram retrabalho?", ...countByField(answers, "q_rx_rework") },
+      { pergunta: "Pacientes têm dificuldade?", ...countByField(answers, "q_rx_elderly_difficulty") },
+      { pergunta: "Valor em ferramenta de apoio", ...countByField(answers, "q_rx_tool_value") },
+    ];
+  }, [answers]);
 
-  // datasets p/ gráficos
-  const noshowRelevance = dist(filtered, "q_noshow_relevance");
-  const glosaProblem = dist(filtered, "q_glosa_is_problem");
-  const rxRework = dist(filtered, "q_rx_rework");
-  const clinicSize = dist(filtered, "clinic_size");
-  const roleDist = dist(filtered, "doctor_role");
-
-  // matriz simples: tamanho x no-show (heat map textual)
-  const sizes = Array.from(new Set(filtered.map(r => r.clinic_size ?? "—")));
-  const noshowOpts = Array.from(new Set(filtered.map(r => r.q_noshow_relevance ?? "—")));
-  const crossTab = sizes.map(size => {
-    const row: Record<string,string|number> = { size };
-    noshowOpts.forEach(opt => {
-      row[opt] = filtered.filter(r => (r.clinic_size ?? "—") === size && (r.q_noshow_relevance ?? "—") === opt).length;
-    });
-    return row;
-  });
-
-  const signOut = async () => { await supabase.auth.signOut(); router.replace("/admin"); };
+  /* ==== Dados dos gráficos ==== */
+  const chartNoshow = useMemo(
+    () => toChartArray(countByField(answers, "q_noshow_relevance")),
+    [answers]
+  );
+  const chartGlosa = useMemo(
+    () => toChartArray(countByField(answers, "q_glosa_is_problem")),
+    [answers]
+  );
+  const chartRx = useMemo(
+    () => toChartArray(countByField(answers, "q_rx_rework")),
+    [answers]
+  );
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <div className="card-title"><span className="title-dot" />Dashboard • Pesquisa</div>
-        <div className="flex items-center gap-2">
-          <a href="/" className="btn btn-outline">Ver landing</a>
-          <button onClick={signOut} className="btn btn-primary">Sair</button>
-        </div>
+    <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+
+        <ExportPDFButton
+          kpi={kpi}
+          summaryRows={summaryRows}
+          answers={answers}
+          chartRefs={{ noshowRef, glosaRef, rxRef }}
+        />
       </div>
 
-      {/* Filtros */}
-      <section className="card mb-6">
-        <div className="grid md:grid-cols-4 gap-4">
-          <div>
-            <label className="text-sm text-slate-600">Especialidade/Função</label>
-            <select className="ui-select mt-1" value={roleFilter} onChange={e=>setRoleFilter(e.target.value)}>
-              <option value="">Todas</option>
-              <option>Clínico</option><option>Geriatra</option>
-              <option>Dermatologista</option><option>Ortopedista</option><option>Outra</option>
-            </select>
+      {/* KPIs cards */}
+      <section className="grid md:grid-cols-3 gap-4">
+        <div className="card">
+          <div className="text-slate-500 text-sm">Total de respostas</div>
+          <div className="text-3xl font-extrabold mt-1">{kpi.total}</div>
+        </div>
+        <div className="card">
+          <div className="text-slate-500 text-sm">% consideram no-show relevante</div>
+          <div className="text-3xl font-extrabold mt-1">
+            {kpi.noshowYesPct.toFixed(0)}%
           </div>
-          <div>
-            <label className="text-sm text-slate-600">Tamanho da clínica</label>
-            <select className="ui-select mt-1" value={sizeFilter} onChange={e=>setSizeFilter(e.target.value)}>
-              <option value="">Todos</option>
-              <option>Pequeno</option><option>Médio</option><option>Grande</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-sm text-slate-600">De</label>
-            <input type="date" className="ui-input mt-1" value={from} onChange={e=>setFrom(e.target.value)} />
-          </div>
-          <div>
-            <label className="text-sm text-slate-600">Até</label>
-            <input type="date" className="ui-input mt-1" value={to} onChange={e=>setTo(e.target.value)} />
+        </div>
+        <div className="card">
+          <div className="text-slate-500 text-sm">% relatam glosas recorrentes</div>
+          <div className="text-3xl font-extrabold mt-1">
+            {kpi.glosaRecorrentePct.toFixed(0)}%
           </div>
         </div>
       </section>
 
-      {/* KPIs rápidos */}
-      <section className="grid md:grid-cols-4 gap-4 mb-6">
-        {[
-          { label:"Respostas", value: filtered.length },
-          { label:"% No-show relevante (\"Sim\")", value: (() => {
-              const base = filtered.length || 1;
-              const yes = filtered.filter(r => r.q_noshow_relevance === "Sim").length;
-              return ((yes/base)*100).toFixed(0) + "%";
-            })()
-          },
-          { label:"% Glosas recorrentes", value: (() => {
-              const base = filtered.length || 1;
-              const yes = filtered.filter(r => r.q_glosa_is_problem === "Sim").length;
-              return ((yes/base)*100).toFixed(0) + "%";
-            })()
-          },
-          { label:"% Retrabalho em receitas", value: (() => {
-              const base = filtered.length || 1;
-              const yes = filtered.filter(r => r.q_rx_rework === "Sim").length;
-              return ((yes/base)*100).toFixed(0) + "%";
-            })()
-          },
-        ].map(k => (
-          <div key={k.label} className="card">
-            <div className="text-sm text-slate-500">{k.label}</div>
-            <div className="text-2xl font-bold mt-1">{k.value}</div>
-          </div>
-        ))}
-      </section>
+      {err && <div className="text-red-600">{err}</div>}
+      {loading && <div>Carregando dados…</div>}
 
-      {/* Gráficos */}
-      <section className="grid md:grid-cols-2 gap-6 mb-6">
-        <div className="card">
-          <div className="font-semibold mb-2">No-show: relevância</div>
-          <div className="w-full h-64">
+      {/* ===== No-show ===== */}
+      <section className="card">
+        <h2 className="card-title">No-show</h2>
+        <p className="text-slate-600 mb-3">
+          Distribuição das respostas para “No-show é relevante?”.
+        </p>
+
+        <div ref={noshowRef}>
+          <div style={{ width: "100%", height: 300 }}>
             <ResponsiveContainer>
-              <BarChart data={noshowRelevance}>
+              <BarChart data={chartNoshow}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name"/><YAxis allowDecimals={false}/><Tooltip/>
-                <Bar dataKey="value" fill={BRAND.color} radius={[8,8,0,0]}/>
+                <XAxis dataKey="name" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="value" radius={[8, 8, 0, 0]} fill={BRAND.bar} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
+      </section>
 
-        <div className="card">
-          <div className="font-semibold mb-2">Glosas recorrentes</div>
-          <div className="w-full h-64">
+      {/* ===== Glosas ===== */}
+      <section className="card">
+        <h2 className="card-title">Glosas</h2>
+        <p className="text-slate-600 mb-3">
+          Percentual de recorrência de glosas (Sim/Não/Às vezes).
+        </p>
+
+        <div ref={glosaRef}>
+          <div style={{ width: "100%", height: 300 }}>
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={glosaProblem} dataKey="value" nameKey="name" outerRadius={90} label>
-                  {glosaProblem.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                <Pie
+                  data={chartGlosa}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={60}
+                  outerRadius={100}
+                  paddingAngle={3}
+                >
+                  {chartGlosa.map((_, i) => (
+                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  ))}
                 </Pie>
-                <Tooltip/><Legend />
+                <Tooltip />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
+      </section>
 
-        <div className="card">
-          <div className="font-semibold mb-2">Retrabalho em receitas</div>
-          <div className="w-full h-64">
-            <ResponsiveContainer>
-              <BarChart data={rxRework}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name"/><YAxis allowDecimals={false}/><Tooltip/>
-                <Bar dataKey="value" fill="#6a11cb" radius={[8,8,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      {/* ===== Receitas Digitais ===== */}
+      <section className="card">
+        <h2 className="card-title">Receitas Digitais</h2>
+        <p className="text-slate-600 mb-3">
+          Distribuição das respostas para “Receitas digitais geram retrabalho?”.
+        </p>
 
-        <div className="card">
-          <div className="font-semibold mb-2">Perfil: Tamanho da clínica</div>
-          <div className="w-full h-64">
+        <div ref={rxRef}>
+          <div style={{ width: "100%", height: 300 }}>
             <ResponsiveContainer>
-              <BarChart data={clinicSize}>
+              <BarChart data={chartRx}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name"/><YAxis allowDecimals={false}/><Tooltip/>
-                <Bar dataKey="value" fill="#2575fc" radius={[8,8,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="card md:col-span-2">
-          <div className="font-semibold mb-2">Perfil: Especialidade/Função</div>
-          <div className="w-full h-64">
-            <ResponsiveContainer>
-              <BarChart data={roleDist}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name"/><YAxis allowDecimals={false}/><Tooltip/>
-                <Bar dataKey="value" fill="#0ea5e9" radius={[8,8,0,0]}/>
+                <XAxis dataKey="name" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="value" radius={[8, 8, 0, 0]} fill={BRAND.barAlt} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       </section>
 
-      {/* Cross-tab simples (heat textual) */}
-      <section className="card mb-6">
-        <div className="font-semibold mb-3">Matriz: Tamanho x No-show (contagem)</div>
-        <div className="overflow-auto">
+      {/* Lista compacta das últimas respostas (amostra) */}
+      <section className="card">
+        <h2 className="card-title">Últimas respostas</h2>
+        <div className="mt-3 overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr>
-                <th className="text-left p-2 border-b">Tamanho</th>
-                {noshowOpts.map(h => (
-                  <th key={h} className="text-left p-2 border-b">{h}</th>
-                ))}
+              <tr className="text-left text-slate-500">
+                <th className="py-2 pr-4">Data</th>
+                <th className="py-2 pr-4">Nome</th>
+                <th className="py-2 pr-4">No-show</th>
+                <th className="py-2 pr-4">Glosas</th>
+                <th className="py-2 pr-4">Receitas digitais</th>
+                <th className="py-2">Comentário</th>
               </tr>
             </thead>
             <tbody>
-              {crossTab.map((r:any) => (
-                <tr key={r.size}>
-                  <td className="p-2 border-b font-medium">{r.size}</td>
-                  {noshowOpts.map(h => (
-                    <td key={h} className="p-2 border-b">{r[h] as number}</td>
-                  ))}
+              {answers.slice(0, 25).map((r) => (
+                <tr key={r.id} className="border-t">
+                  <td className="py-2 pr-4">
+                    {new Date(r.created_at).toLocaleDateString("pt-BR")}
+                  </td>
+                  <td className="py-2 pr-4">{r.doctor_name || "—"}</td>
+                  <td className="py-2 pr-4">{r.q_noshow_relevance || "—"}</td>
+                  <td className="py-2 pr-4">{r.q_glosa_is_problem || "—"}</td>
+                  <td className="py-2 pr-4">{r.q_rx_rework || "—"}</td>
+                  <td className="py-2">{r.comments || "—"}</td>
                 </tr>
               ))}
+              {!answers.length && !loading && (
+                <tr>
+                  <td className="py-4 text-slate-500" colSpan={6}>
+                    Nenhuma resposta encontrada.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </section>
-
-      {/* Tabela detalhada */}
-      <section className="card">
-        <div className="flex items-center justify-between mb-3">
-          <div className="font-semibold">Respostas (detalhe)</div>
-          <a
-            className="btn btn-outline"
-            href={`data:text/csv;charset=utf-8,${encodeURIComponent(toCSV(filtered))}`}
-            download={`respostas_${new Date().toISOString().slice(0,10)}.csv`}
-          >
-            Baixar CSV
-          </a>
-        </div>
-        <div className="overflow-auto">
-          <table className="min-w-[900px] text-sm">
-            <thead>
-              <tr>
-                <th className="text-left p-2 border-b">Data</th>
-                <th className="text-left p-2 border-b">Nome</th>
-                <th className="text-left p-2 border-b">CRM</th>
-                <th className="text-left p-2 border-b">Contato</th>
-                <th className="text-left p-2 border-b">Perfil</th>
-                <th className="text-left p-2 border-b">Tamanho</th>
-                <th className="text-left p-2 border-b">No-show</th>
-                <th className="text-left p-2 border-b">Glosas</th>
-                <th className="text-left p-2 border-b">Receitas</th>
-                <th className="text-left p-2 border-b">Comentários</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td className="p-3 text-slate-500" colSpan={10}>Carregando…</td></tr>
-              ) : err ? (
-                <tr><td className="p-3 text-red-600" colSpan={10}>{err}</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td className="p-3 text-slate-500" colSpan={10}>Sem dados com os filtros atuais.</td></tr>
-              ) : filtered.map((r) => (
-                <tr key={r.id}>
-                  <td className="p-2 border-b">{new Date(r.created_at).toLocaleString()}</td>
-                  <td className="p-2 border-b">{r.doctor_name ?? "—"}</td>
-                  <td className="p-2 border-b">{r.crm ?? "—"}</td>
-                  <td className="p-2 border-b">{r.contact ?? "—"}</td>
-                  <td className="p-2 border-b">{r.doctor_role ?? "—"}</td>
-                  <td className="p-2 border-b">{r.clinic_size ?? "—"}</td>
-                  <td className="p-2 border-b">
-                    {(r.q_noshow_relevance ?? "—")} / {(r.q_noshow_has_system ?? "—")} / {(r.q_noshow_financial_impact ?? "—")}
-                  </td>
-                  <td className="p-2 border-b">
-                    {(r.q_glosa_is_problem ?? "—")} / {(r.q_glosa_interest ?? "—")} / {(r.q_glosa_who_suffers ?? "—")}
-                  </td>
-                  <td className="p-2 border-b">
-                    {(r.q_rx_rework ?? "—")} / {(r.q_rx_elderly_difficulty ?? "—")} / {(r.q_rx_tool_value ?? "—")}
-                  </td>
-                  <td className="p-2 border-b">{r.comments ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <p className="text-xs text-slate-500 mt-6 text-center">
-        * Este painel reflete o mesmo visual premium (cards, botões e gradiente) da landing.
-      </p>
     </div>
   );
-}
-
-// util: gera CSV básico
-function toCSV(data: Row[]) {
-  const headers = [
-    "created_at","doctor_name","crm","contact","doctor_role","clinic_size",
-    "q_noshow_relevance","q_noshow_has_system","q_noshow_financial_impact",
-    "q_glosa_is_problem","q_glosa_interest","q_glosa_who_suffers",
-    "q_rx_rework","q_rx_elderly_difficulty","q_rx_tool_value","comments"
-  ];
-  const lines = [headers.join(",")];
-  for (const r of data) {
-    const row = headers.map(h => {
-      const v = (r as any)[h] ?? "";
-      const s = String(v).replaceAll('"','""');
-      return `"${s}"`;
-    });
-    lines.push(row.join(","));
-  }
-  return lines.join("\n");
 }
