@@ -33,9 +33,25 @@ const BRAND_GRAD_RIGHT = "#2575fc";
 const INK = "#0f172a";
 const INK_SOFT = "#64748b";
 const CARD_EDGE = "#e9edf7";
+const LOGO_SRC = "/logo.png";
 
-/** Converte nó (gráfico) em PNG com tolerância a erro */
-async function nodeToPNG(el?: HTMLElement | null, width = 1000): Promise<string | null> {
+/** Carrega imagem mantendo proporção (evita logo achatado) */
+function loadImage(src: string): Promise<{ img: HTMLImageElement; ratio: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () =>
+      resolve({
+        img,
+        ratio: (img.naturalWidth || 1) / (img.naturalHeight || 1),
+      });
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+/** Converte um nó (gráfico) para PNG */
+async function nodeToPNG(el?: HTMLElement | null, width = 1300): Promise<string | null> {
   if (!el) return null;
   try {
     const dataUrl = await htmlToImage.toPng(el, {
@@ -45,7 +61,7 @@ async function nodeToPNG(el?: HTMLElement | null, width = 1000): Promise<string 
     });
     return dataUrl;
   } catch {
-    return null; // sem estourar a geração
+    return null;
   }
 }
 
@@ -58,165 +74,120 @@ function formatNow(): string {
   }).format(d);
 }
 
-/** Carrega /logo.png como dataURL (evita CORS no Vercel) */
-async function loadLogoDataURL(): Promise<{ dataUrl: string; ratio: number } | null> {
-  try {
-    const res = await fetch("/logo.png", { cache: "no-store" });
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    const dataUrl = await new Promise<string>((resolve) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.readAsDataURL(blob);
-    });
-
-    // tenta inferir proporção (fallback 1:1)
-    return { dataUrl, ratio: 1 };
-  } catch {
-    return null;
-  }
-}
-
 export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }: Props) {
   const [loading, setLoading] = useState(false);
 
   const onExport = useCallback(async () => {
     setLoading(true);
     try {
-      const doc = new jsPDF({ unit: "pt", format: "a4" });
-      const pageW = doc.internal.pageSize.getWidth();
-      const pageH = doc.internal.pageSize.getHeight();
-      const marginX = 48;
+      // === A4 LANDSCAPE ===
+      const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
+      const pageW = doc.internal.pageSize.getWidth();  // ~ 842 pt
+      const pageH = doc.internal.pageSize.getHeight(); // ~ 595 pt
+      const marginX = 40;
       let cursorY = 0;
 
-      // Faixa superior
+      // Faixa superior fina (marca)
       doc.setFillColor(BRAND_BLUE);
       doc.rect(0, 0, pageW, 8, "F");
 
-      // Cabeçalho
-      const headerH = 84;
+      // Cabeçalho (ocupando largura quase total)
+      const headerH = 90;
       doc.setFillColor("#ffffff");
       doc.setDrawColor(CARD_EDGE);
       doc.setLineWidth(1);
-      doc.roundedRect(marginX, 20, pageW - marginX * 2, headerH, 10, 10, "FD");
+      doc.roundedRect(marginX, 20, pageW - marginX * 2, headerH, 12, 12, "FD");
 
-      // Logo via dataURL (sem CORS)
-      const logoInfo = await loadLogoDataURL();
-      const logoH = 40;
-      const logoW = 40; // mantém quadrado para não “achatar” no PDF
+      // Logo proporcional à esquerda
+      const { img: logo, ratio } = await loadImage(LOGO_SRC);
+      const logoH = 52; // altura fixa “bonita”
+      const logoW = Math.round(logoH * ratio);
       const logoX = marginX + 16;
       const logoY = 20 + (headerH - logoH) / 2;
+      doc.addImage(logo, "PNG", logoX, logoY, logoW, logoH);
 
-      if (logoInfo?.dataUrl) {
-        try {
-          doc.addImage(logoInfo.dataUrl, "PNG", logoX, logoY, logoW, logoH, undefined, "FAST");
-        } catch {
-          // ignora erro do logo para não travar
-        }
-      }
-
-      // Título + data
+      // Título e data à direita do logo
+      const titleX = logoX + logoW + 16;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
-      doc.setFontSize(20);
-      doc.text("Relatório da Pesquisa — Clínicas e Consultórios", logoX + logoW + 14, logoY + 22);
+      doc.setFontSize(24);
+      doc.text("Relatório da Pesquisa — Clínicas e Consultórios", titleX, logoY + 24);
 
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK_SOFT);
       doc.setFontSize(11);
-      doc.text(`Gerado em ${formatNow()}`, logoX + logoW + 14, logoY + 42);
+      doc.text(`Gerado em ${formatNow()}`, titleX, logoY + 44);
 
       cursorY = 20 + headerH + 18;
 
-      // KPIs
-      const kpiCardW = (pageW - marginX * 2 - 16 * 2) / 3;
-      const kpiCardH = 78;
-      const kpiStartX = marginX;
-      const kpiGap = 16;
+      // =================== KPIs (4 cartões) ===================
+      // 4 colunas em paisagem cabem bem com um gap consistente
+      const kpiCols = 4;
+      const kpiGap = 14;
+      const kpiCardW = (pageW - marginX * 2 - kpiGap * (kpiCols - 1)) / kpiCols;
+      const kpiCardH = 92;
 
       const drawKpiCard = (x: number, title: string, value: string) => {
         doc.setDrawColor(CARD_EDGE);
         doc.setFillColor("#ffffff");
-        doc.roundedRect(x, cursorY, kpiCardW, kpiCardH, 10, 10, "FD");
+        doc.roundedRect(x, cursorY, kpiCardW, kpiCardH, 12, 12, "FD");
 
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
+        doc.setFontSize(12);
         doc.setTextColor(INK);
-        doc.text(title, x + 14, cursorY + 22);
+        doc.text(title, x + 14, cursorY + 22, { maxWidth: kpiCardW - 28 });
 
         doc.setTextColor(BRAND_BLUE);
-        doc.setFontSize(28);
-        doc.text(value, x + 14, cursorY + 56);
+        doc.setFontSize(30);
+        doc.text(value, x + 14, cursorY + 62);
       };
 
-      drawKpiCard(kpiStartX, "Total de respostas", `${kpi.total}`);
-      drawKpiCard(
-        kpiStartX + kpiCardW + kpiGap,
-        "% que consideram no-show relevante",
-        `${kpi.noshowYesPct.toFixed(0)}%`
-      );
-      drawKpiCard(
-        kpiStartX + 2 * (kpiCardW + kpiGap),
-        "% que relatam glosas recorrentes",
-        `${kpi.glosaRecorrentePct.toFixed(0)}%`
-      );
+      let x = marginX;
+      drawKpiCard(x, "Total de respostas", `${kpi.total}`);
+      x += kpiCardW + kpiGap;
 
-      cursorY += kpiCardH + 22;
+      drawKpiCard(x, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      x += kpiCardW + kpiGap;
 
-      // ----- Gráfico 1
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(14);
-      doc.text("Distribuição — No-show relevante", marginX, cursorY);
-      cursorY += 12;
+      drawKpiCard(x, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
+      x += kpiCardW + kpiGap;
 
-      const g1 = await nodeToPNG(chartRefs.noshowRef.current);
-      const chartH = 220;
-      if (g1) {
-        try {
-          doc.addImage(g1, "PNG", marginX, cursorY, pageW - marginX * 2, chartH, undefined, "FAST");
-        } catch {
+      drawKpiCard(x, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
+
+      cursorY += kpiCardH + 24;
+
+      // =================== GRÁFICOS ===================
+      // Cada gráfico com título + imagem/placeholder
+      const chartH = 200;
+
+      const drawChart = async (title: string, el?: HTMLElement | null) => {
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text(title, marginX, cursorY);
+        cursorY += 12;
+
+        const dataUrl = await nodeToPNG(el);
+        if (dataUrl) {
+          doc.addImage(dataUrl, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
+        } else {
           doc.setDrawColor(CARD_EDGE);
           doc.setLineWidth(1);
           doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
         }
-      } else {
-        doc.setDrawColor(CARD_EDGE);
-        doc.setLineWidth(1);
-        doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
-      }
-      cursorY += chartH + 26;
+        cursorY += chartH + 22;
+      };
 
-      // ----- Gráfico 2
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(14);
-      doc.text("Distribuição — Glosas (recorrência / interesse)", marginX, cursorY);
-      cursorY += 12;
+      await drawChart("Distribuição — No-show relevante", chartRefs.noshowRef.current);
+      await drawChart("Distribuição — Glosas (recorrência / interesse)", chartRefs.glosaRef.current);
+      await drawChart("Distribuição — Receitas Digitais (retrabalho / dificuldade / valor)", chartRefs.rxRef.current);
 
-      const g2 = await nodeToPNG(chartRefs.glosaRef.current);
-      if (g2) {
-        try {
-          doc.addImage(g2, "PNG", marginX, cursorY, pageW - marginX * 2, chartH, undefined, "FAST");
-        } catch {
-          doc.setDrawColor(CARD_EDGE);
-          doc.setLineWidth(1);
-          doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
-        }
-      } else {
-        doc.setDrawColor(CARD_EDGE);
-        doc.setLineWidth(1);
-        doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
-      }
-      cursorY += chartH + 26;
-
-      // quebra antes da tabela
-      if (cursorY > pageH - 180) {
-        doc.addPage();
+      // =================== TABELA RESUMO ===================
+      if (cursorY > pageH - 200) {
+        doc.addPage(); // ainda em landscape
         cursorY = marginX;
       }
 
-      // ----- Tabela resumo
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
@@ -245,7 +216,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
           lineColor: CARD_EDGE,
         },
         headStyles: {
-          fillColor: [25, 118, 210], // BRAND_BLUE
+          fillColor: [25, 118, 210],
           textColor: "#ffffff",
           fontStyle: "bold",
         },
@@ -256,51 +227,35 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         theme: "grid",
       });
 
-      // ----- Detalhes
-      doc.addPage();
+      // =================== DETALHES (nova página) ===================
+      doc.addPage("a4", "landscape");
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
       doc.text("Respostas detalhadas (sem identificação sensível)", marginX, marginX);
 
-      if (answers.length === 0) {
-        autoTable(doc as any, {
-          startY: marginX + 10,
-          body: [{ info: "Nenhuma resposta até o momento." }],
-          columns: [{ header: "Informação", dataKey: "info" }],
-          styles: { font: "helvetica", fontSize: 10, textColor: INK },
-          headStyles: {
-            fillColor: [37, 117, 252],
-            textColor: "#ffffff",
-            fontStyle: "bold",
-          },
-          theme: "grid",
-          margin: { left: marginX, right: marginX },
-        });
-      } else {
-        const firstRow = answers[0] || {};
-        const detailCols = Object.keys(firstRow).map((k) => ({ header: k, dataKey: k }));
+      const firstRow = answers[0] || {};
+      const detailCols = Object.keys(firstRow).map((k) => ({ header: k, dataKey: k }));
 
-        autoTable(doc as any, {
-          startY: marginX + 10,
-          styles: {
-            font: "helvetica",
-            fontSize: 9,
-            textColor: INK,
-            cellPadding: 5,
-            lineColor: CARD_EDGE,
-          },
-          headStyles: {
-            fillColor: [37, 117, 252],
-            textColor: "#ffffff",
-            fontStyle: "bold",
-          },
-          body: answers,
-          columns: detailCols.length ? detailCols : [{ header: "Dados", dataKey: "dados" }],
-          theme: "grid",
-          margin: { left: marginX, right: marginX },
-        });
-      }
+      autoTable(doc as any, {
+        startY: marginX + 10,
+        styles: {
+          font: "helvetica",
+          fontSize: 9,
+          textColor: INK,
+          cellPadding: 5,
+          lineColor: CARD_EDGE,
+        },
+        headStyles: {
+          fillColor: [37, 117, 252],
+          textColor: "#ffffff",
+          fontStyle: "bold",
+        },
+        body: answers,
+        columns: detailCols,
+        margin: { left: marginX, right: marginX },
+        theme: "grid",
+      });
 
       // Rodapé
       const year = new Date().getFullYear();
