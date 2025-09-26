@@ -208,7 +208,7 @@ export default function Page() {
                 color: "transparent",
               }}
             >
-              Obrigado pela resposta!
+              Obrigado por responder!
             </span>
           </h1>
 
