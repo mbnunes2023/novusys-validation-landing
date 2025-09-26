@@ -1,27 +1,22 @@
-// app/admin/dashboard/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import ExportPDFButton from "../components/ExportPDFButton";
 import { supabase } from "@/lib/supabaseClient";
+import ExportPDFButton from "../components/ExportPDFButton";
 
-/* ======================== Tipos ======================== */
+/* ===================== Tipos ===================== */
 
 type Answer = {
   id: string;
-  created_at: string;              // ISO do Supabase
+  created_at: string;
   doctor_name: string | null;
   crm: string | null;
   contact: string | null;
   consent_contact: boolean | null;
   consent: boolean | null;
-
-  // filtros
-  doctor_role: string | null;      // Geriatra | Dermatologista | Ortopedista | Outra
-  clinic_size: string | null;      // Pequeno | Médio | Grande
-
-  // perguntas
+  doctor_role: string | null;     // Especialidade/Função
+  clinic_size: string | null;     // Pequeno | Médio | Grande
   q_noshow_relevance: string | null;
   q_noshow_has_system: string | null;
   q_noshow_financial_impact: string | null;
@@ -34,65 +29,101 @@ type Answer = {
   comments: string | null;
 };
 
-type KPI = {
-  total: number;
-  noshowYesPct: number;
-  glosaRecorrentePct: number;
-  rxReworkPct: number;
-};
-
-/* ======================== Constantes UI ======================== */
+/* ===================== Mini helpers ===================== */
 
 const ROLES = ["Geriatra", "Dermatologista", "Ortopedista", "Outra"] as const;
-const CLINIC_SIZES = ["Pequeno", "Médio", "Grande"] as const;
+const SIZES = ["Pequeno", "Médio", "Grande"] as const;
 
-function startOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-function endOfDay(d: Date) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
-function parseBRDate(input: string | null) {
-  // dd/mm/aaaa -> Date | null
-  if (!input) return null;
-  const m = input.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  const [, dd, mm, yyyy] = m;
-  const dt = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-  return isNaN(dt.getTime()) ? null : dt;
+function parseDateISO(d: string | null | undefined) {
+  if (!d) return null;
+  const t = Date.parse(d);
+  return Number.isNaN(t) ? null : new Date(t);
 }
 
-/* ======================== Botões "Pill" ======================== */
+function withinRange(dt: Date, from?: Date | null, to?: Date | null) {
+  const ts = dt.getTime();
+  if (from && ts < from.getTime()) return false;
+  if (to && ts > to.getTime()) return false;
+  return true;
+}
 
-function Pill({
-  active,
-  children,
-  onClick,
-}: {
-  active?: boolean;
-  children: React.ReactNode;
-  onClick?: () => void;
-}) {
+function pct(count: number, total: number) {
+  return total ? Math.round((count / total) * 100) : 0;
+}
+
+type Dist = Array<{ label: string; count: number }>;
+function makeDist<T extends string | null | undefined>(arr: T[], order: string[]): Dist {
+  const map: Record<string, number> = {};
+  order.forEach(o => (map[o] = 0));
+  arr.forEach(v => {
+    const k = v ?? "";
+    if (order.includes(k)) map[k] += 1;
+  });
+  return order.map(label => ({ label, count: map[label] ?? 0 }));
+}
+
+/* ===================== Recharts ===================== */
+
+import {
+  PieChart, Pie, Cell, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid
+} from "recharts";
+
+const PRIMARY = "#1976d2";
+const LIGHT = "#e8f0fe";
+const GRID = "#eef2f9";
+
+/* KPI donut (anel) */
+function KpiDonut({ title, valuePct }: { title: string; valuePct: number }) {
+  const data = useMemo(() => [
+    { name: "ok", value: Math.max(0, Math.min(100, valuePct)) },
+    { name: "rest", value: Math.max(0, 100 - Math.max(0, Math.min(100, valuePct))) },
+  ], [valuePct]);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-4 py-2 rounded-full border transition ${
-        active
-          ? "bg-blue-50 border-blue-400 text-blue-700"
-          : "bg-white border-slate-300 text-slate-700 hover:border-slate-400"
-      }`}
-    >
-      {children}
-    </button>
+    <div className="card">
+      <div className="text-sm font-semibold text-slate-700">{title}</div>
+      <div className="flex items-center gap-4 mt-2">
+        <div className="h-[90px] w-[90px]">
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie data={data} innerRadius={32} outerRadius={45} startAngle={90} endAngle={-270} dataKey="value">
+                <Cell fill={PRIMARY} />
+                <Cell fill={LIGHT} />
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="text-3xl font-extrabold text-[var(--brand-1)]">{valuePct}%</div>
+      </div>
+    </div>
   );
 }
 
-/* ======================== Página ======================== */
+/* Bar compacta */
+function DistBar({
+  title, data,
+}: { title: string; data: Dist }) {
+  const chartData = data.map(d => ({ name: d.label, value: d.count }));
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="text-sm font-semibold text-slate-700 mb-2">{title}</div>
+      <div className="h-[160px]">
+        <ResponsiveContainer>
+          <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
+            <CartesianGrid stroke={GRID} horizontal={false} />
+            <XAxis type="number" hide />
+            <YAxis type="category" width={120} dataKey="name" />
+            <Tooltip cursor={{ fill: "#f8fafc" }} />
+            <Bar dataKey="value" radius={[6, 6, 6, 6]} fill={PRIMARY} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/* ===================== Página ===================== */
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -100,21 +131,27 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
 
   // Filtros
-  const [quick, setQuick] = useState<"7d" | "30d" | "90d" | "all">("all");
-  const [fromStr, setFromStr] = useState<string>(""); // dd/mm/aaaa
-  const [toStr, setToStr] = useState<string>("");
+  const [quick, setQuick] = useState<"7" | "30" | "90" | "all">("all");
+  const [from, setFrom] = useState<string>("");
+  const [to, setTo] = useState<string>("");
 
-  const [roleSel, setRoleSel] = useState<string[]>([]);        // multi
-  const [sizeSel, setSizeSel] = useState<string[]>([]);        // multi
+  const [sizeSel, setSizeSel] = useState<string[]>([]);        // Pequeno/Médio/Grande
+  const [roleSel, setRoleSel] = useState<string[]>([]);        // Especialidade
+  const [respSel, setRespSel] = useState<string>("Todos");     // R-xx
 
-  // sessão
+  // Refs que o PDF pode “fotografar” (se quiser usar depois)
+  const noshowRef = useRef<HTMLDivElement>(null);
+  const glosaRef  = useRef<HTMLDivElement>(null);
+  const rxRef     = useRef<HTMLDivElement>(null);
+
+  // Autenticação
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) router.replace("/admin"); // volta ao login se não autenticado
+      if (!data.session) router.replace("/admin");
     });
   }, [router]);
 
-  // carrega dados
+  // Carregar dados
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -122,210 +159,264 @@ export default function AdminDashboard() {
         .from("validation_responses")
         .select("*")
         .order("created_at", { ascending: false });
-
       if (!error && data) setAnswers(data as Answer[]);
       setLoading(false);
     })();
   }, []);
 
-  // datas efetivas para filtro
-  const { fromDate, toDate } = useMemo(() => {
-    const now = new Date();
-    if (quick !== "all") {
-      const days = quick === "7d" ? 7 : quick === "30d" ? 30 : 90;
-      const from = new Date(now);
-      from.setDate(from.getDate() - (days - 1)); // inclui hoje
-      return { fromDate: startOfDay(from), toDate: endOfDay(now) };
-    }
-    const from = parseBRDate(fromStr);
-    const to = parseBRDate(toStr);
-    return {
-      fromDate: from ? startOfDay(from) : null,
-      toDate: to ? endOfDay(to) : null,
-    };
-  }, [quick, fromStr, toStr]);
+  // Datas rápidas
+  const quickRange = useMemo(() => {
+    if (quick === "all") return { from: null as Date | null, to: null as Date | null };
+    const to = new Date();
+    const from = new Date();
+    const days = quick === "7" ? 7 : quick === "30" ? 30 : 90;
+    from.setDate(to.getDate() - (days - 1));
+    from.setHours(0, 0, 0, 0);
+    to.setHours(23, 59, 59, 999);
+    return { from, to };
+  }, [quick]);
 
-  // aplica filtros
+  // Respostas filtradas
   const filtered = useMemo(() => {
-    return answers.filter((a) => {
-      // data
-      if (fromDate || toDate) {
-        const d = new Date(a.created_at);
-        if (fromDate && d < fromDate) return false;
-        if (toDate && d > toDate) return false;
-      }
-      // role
-      if (roleSel.length > 0) {
-        const v = (a.doctor_role || "").trim();
-        if (!roleSel.includes(v)) return false;
-      }
-      // tamanho
-      if (sizeSel.length > 0) {
-        const v = (a.clinic_size || "").trim();
-        if (!sizeSel.includes(v)) return false;
-      }
-      return true;
-    });
-  }, [answers, fromDate, toDate, roleSel, sizeSel]);
+    const customFrom = from ? new Date(from.split("/").reverse().join("-")) : null;
+    const customTo   = to   ? new Date(to.split("/").reverse().join("-"))   : null;
+    const useFrom = customFrom ?? quickRange.from;
+    const useTo   = customTo   ?? quickRange.to;
 
-  // KPIs sobre filtrado
-  const kpi: KPI = useMemo(() => {
+    let base = answers.filter(a => {
+      const dt = parseDateISO(a.created_at);
+      return dt ? withinRange(dt, useFrom, useTo) : true;
+    });
+
+    if (sizeSel.length) {
+      base = base.filter(a => a.clinic_size && sizeSel.includes(a.clinic_size));
+    }
+    if (roleSel.length) {
+      base = base.filter(a => a.doctor_role && roleSel.includes(a.doctor_role));
+    }
+    if (respSel !== "Todos") {
+      const idx = Number(respSel.replace("R-", "")) - 1;
+      if (idx >= 0 && idx < base.length) base = [base[idx]];
+      else base = [];
+    }
+    return base;
+  }, [answers, from, to, quickRange, sizeSel, roleSel, respSel]);
+
+  // KPIs
+  const kpi = useMemo(() => {
     const total = filtered.length;
-    const noshowYes = filtered.filter((r) => r.q_noshow_relevance === "Sim").length;
-    const glosaYes = filtered.filter((r) => r.q_glosa_is_problem === "Sim").length;
-    const rxYes = filtered.filter((r) => r.q_rx_rework === "Sim").length;
+    const noshowYes = filtered.filter(a => a.q_noshow_relevance === "Sim").length;
+    const glosaRec  = filtered.filter(a => a.q_glosa_is_problem === "Sim").length;
+    const rxRework  = filtered.filter(a => a.q_rx_rework === "Sim").length;
     return {
       total,
-      noshowYesPct: total ? (noshowYes / total) * 100 : 0,
-      glosaRecorrentePct: total ? (glosaYes / total) * 100 : 0,
-      rxReworkPct: total ? (rxYes / total) * 100 : 0,
+      noshowYesPct: pct(noshowYes, total),
+      glosaRecorrentePct: pct(glosaRec, total),
+      rxReworkPct: pct(rxRework, total),
     };
   }, [filtered]);
 
-  // reset
-  const resetFilters = () => {
-    setQuick("all");
-    setFromStr("");
-    setToStr("");
-    setRoleSel([]);
-    setSizeSel([]);
-  };
+  // Distribuições (sempre sobre “filtered”)
+  const distNoShowRelev   = makeDist(filtered.map(a => a.q_noshow_relevance), ["Sim", "Parcialmente", "Não"]);
+  const distNoShowSys     = makeDist(filtered.map(a => a.q_noshow_has_system), ["Sim", "Não"]);
+  const distNoShowImpact  = makeDist(filtered.map(a => a.q_noshow_financial_impact), ["Baixo impacto", "Médio impacto", "Alto impacto"]);
 
-  // helpers de seleção (toggle)
-  const toggleMany = (arr: string[], setArr: (v: string[]) => void, value: string) => {
-    setArr(arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value]);
-  };
+  const distGlosaRec      = makeDist(filtered.map(a => a.q_glosa_is_problem), ["Sim", "Às vezes", "Não"]);
+  const distGlosaInterest = makeDist(filtered.map(a => a.q_glosa_interest), ["Sim", "Talvez", "Não"]);
+  const distGlosaWho      = makeDist(filtered.map(a => a.q_glosa_who_suffers), ["Administrativo", "Médico", "Ambos"]);
+
+  const distRxRework      = makeDist(filtered.map(a => a.q_rx_rework), ["Sim", "Raramente", "Não"]);
+  const distRxDiff        = makeDist(filtered.map(a => a.q_rx_elderly_difficulty), ["Sim", "Em parte", "Não"]);
+  const distRxValue       = makeDist(filtered.map(a => a.q_rx_tool_value), ["Sim", "Talvez", "Não"]);
+
+  // Lista de respondentes (após filtros exceto o próprio "Respondente")
+  const respondentOptions = useMemo(() => {
+    return ["Todos", ...filtered.map((_, i) => `R-${String(i + 1).padStart(2, "0")}`)];
+  }, [filtered]);
+
+  // Reset filtros
+  function resetFilters() {
+    setQuick("all");
+    setFrom("");
+    setTo("");
+    setSizeSel([]);
+    setRoleSel([]);
+    setRespSel("Todos");
+  }
 
   if (loading) {
     return (
-      <div className="max-w-6xl mx-auto px-6 py-10 text-slate-700">Carregando…</div>
+      <div className="max-w-6xl mx-auto px-6 py-10">
+        <div className="card">Carregando…</div>
+      </div>
     );
   }
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
-      {/* Cabeçalho */}
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
         <ExportPDFButton
-          kpi={kpi}
-          summaryRows={[]}     // compatibilidade
-          answers={filtered}   // <<< exporta exatamente o que está filtrado
+          kpi={{
+            total: kpi.total,
+            noshowYesPct: kpi.noshowYesPct,
+            glosaRecorrentePct: kpi.glosaRecorrentePct,
+            rxReworkPct: kpi.rxReworkPct,
+          }}
+          summaryRows={[]} // mantido por compatibilidade
+          answers={filtered} // << exporta o PDF com os dados filtrados!
+          chartRefs={{ noshowRef, glosaRef, rxRef }}
         />
       </div>
 
-      {/* Filtros */}
-      <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Período Rápido + Custom */}
-          <div className="lg:col-span-2">
+      {/* ===================== FILTROS ===================== */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Esquerda: períodos */}
+          <div>
             <div className="text-sm font-semibold text-slate-700 mb-2">Período rápido</div>
             <div className="flex flex-wrap gap-2">
-              <Pill active={quick === "7d"} onClick={() => setQuick("7d")}>Últimos 7d</Pill>
-              <Pill active={quick === "30d"} onClick={() => setQuick("30d")}>Últimos 30d</Pill>
-              <Pill active={quick === "90d"} onClick={() => setQuick("90d")}>Últimos 90d</Pill>
-              <Pill active={quick === "all"} onClick={() => setQuick("all")}>Tudo</Pill>
+              {[
+                { k: "7", label: "Últimos 7d" },
+                { k: "30", label: "Últimos 30d" },
+                { k: "90", label: "Últimos 90d" },
+                { k: "all", label: "Tudo" },
+              ].map(opt => (
+                <button
+                  key={opt.k}
+                  onClick={() => { setQuick(opt.k as any); setFrom(""); setTo(""); }}
+                  className={`px-4 py-2 rounded-full border ${quick === opt.k ? "border-[var(--brand-1)] bg-[var(--brand-1)]/10 text-[var(--brand-1)]" : "border-slate-300 text-slate-700"}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
 
-            <div className="mt-4 text-sm font-semibold text-slate-700 mb-2">Intervalo custom</div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm font-semibold text-slate-700 mt-4 mb-2">Intervalo custom</div>
+            <div className="flex items-center gap-2">
               <input
-                inputMode="numeric"
+                value={from}
+                onChange={e => { setFrom(e.target.value); setQuick("all"); }}
                 placeholder="dd/mm/aaaa"
-                value={fromStr}
-                onChange={(e) => { setFromStr(e.target.value); setQuick("all"); }}
-                className="w-40 rounded-lg border border-slate-300 px-3 py-2"
+                className="input"
               />
               <span className="text-slate-500">até</span>
               <input
-                inputMode="numeric"
+                value={to}
+                onChange={e => { setTo(e.target.value); setQuick("all"); }}
                 placeholder="dd/mm/aaaa"
-                value={toStr}
-                onChange={(e) => { setToStr(e.target.value); setQuick("all"); }}
-                className="w-40 rounded-lg border border-slate-300 px-3 py-2"
+                className="input"
               />
             </div>
           </div>
 
-          {/* Dimensões de filtro (alinha com o formulário) */}
-          <div className="lg:col-span-1">
-            <div className="text-sm font-semibold text-slate-700 mb-2">Tamanho do consultório/clínica</div>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {CLINIC_SIZES.map((s) => (
-                <Pill
-                  key={s}
-                  active={sizeSel.includes(s)}
-                  onClick={() => toggleMany(sizeSel, setSizeSel, s)}
-                >
-                  {s}
-                </Pill>
-              ))}
+          {/* Direita: tamanho/role/respondente */}
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <div className="text-sm font-semibold text-slate-700 mb-2">Tamanho do consultório/clínica</div>
+              <div className="flex flex-wrap gap-2">
+                {SIZES.map(sz => {
+                  const active = sizeSel.includes(sz);
+                  return (
+                    <button
+                      key={sz}
+                      onClick={() => setSizeSel(prev => active ? prev.filter(s => s !== sz) : [...prev, sz])}
+                      className={`px-4 py-2 rounded-full border ${active ? "border-[var(--brand-1)] bg-[var(--brand-1)]/10 text-[var(--brand-1)]" : "border-slate-300 text-slate-700"}`}
+                    >
+                      {sz}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="text-sm font-semibold text-slate-700 mb-2">Especialidade / Função</div>
-            <div className="flex flex-wrap gap-2">
-              {ROLES.map((r) => (
-                <Pill
-                  key={r}
-                  active={roleSel.includes(r)}
-                  onClick={() => toggleMany(roleSel, setRoleSel, r)}
+            <div>
+              <div className="text-sm font-semibold text-slate-700 mb-2">Especialidade / Função</div>
+              <div className="flex flex-wrap gap-2">
+                {ROLES.map(r => {
+                  const active = roleSel.includes(r);
+                  return (
+                    <button
+                      key={r}
+                      onClick={() => setRoleSel(prev => active ? prev.filter(s => s !== r) : [...prev, r])}
+                      className={`px-4 py-2 rounded-full border ${active ? "border-[var(--brand-1)] bg-[var(--brand-1)]/10 text-[var(--brand-1)]" : "border-slate-300 text-slate-700"}`}
+                    >
+                      {r}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-700">Respondente</span>
+                <select
+                  className="input"
+                  value={respSel}
+                  onChange={(e) => setRespSel(e.target.value)}
                 >
-                  {r}
-                </Pill>
-              ))}
+                  {respondentOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <button onClick={resetFilters} className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50">
+                Resetar filtros
+              </button>
             </div>
           </div>
         </div>
+      </section>
 
-        <div className="mt-5 flex items-center justify-end">
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="rounded-xl border border-slate-300 px-4 py-2 text-slate-700 hover:bg-slate-50"
-          >
-            Resetar filtros
-          </button>
-        </div>
-      </div>
-
-      {/* KPIs */}
+      {/* ===================== KPIs ===================== */}
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-          <div className="text-sm font-semibold text-slate-900">Total de respostas (após filtros)</div>
+        <div className="card">
+          <div className="text-sm font-semibold text-slate-700">Total de respostas (após filtros)</div>
           <div className="mt-3 text-4xl font-extrabold text-slate-900">{kpi.total}</div>
         </div>
+        <KpiDonut title="% no-show relevante" valuePct={kpi.noshowYesPct} />
+        <KpiDonut title="% glosas recorrentes" valuePct={kpi.glosaRecorrentePct} />
+        <KpiDonut title="% receitas geram retrabalho" valuePct={kpi.rxReworkPct} />
+      </section>
 
-        <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-          <div className="text-sm font-semibold text-slate-900">% no-show relevante</div>
-          <div className="mt-3 text-4xl font-extrabold text-blue-600">{kpi.noshowYesPct.toFixed(0)}%</div>
-        </div>
-
-        <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-          <div className="text-sm font-semibold text-slate-900">% glosas recorrentes</div>
-          <div className="mt-3 text-4xl font-extrabold text-blue-600">{kpi.glosaRecorrentePct.toFixed(0)}%</div>
-        </div>
-
-        <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-          <div className="text-sm font-semibold text-slate-900">% receitas geram retrabalho</div>
-          <div className="mt-3 text-4xl font-extrabold text-blue-600">{kpi.rxReworkPct.toFixed(0)}%</div>
+      {/* ===================== Grupos de gráficos ===================== */}
+      <section className="card" ref={noshowRef}>
+        <h2 className="card-title">No-show</h2>
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3">
+          <DistBar title="Relevância" data={distNoShowRelev} />
+          <DistBar title="Possui sistema que resolve" data={distNoShowSys} />
+          <DistBar title="Impacto financeiro mensal" data={distNoShowImpact} />
         </div>
       </section>
 
-      {/* Slots para gráficos/áreas (se quiser adicionar) */}
-      <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-        <h2 className="text-lg font-bold text-slate-900">No-show</h2>
-        <p className="text-slate-500 mt-2">
-          Insira aqui gráficos (ex.: Recharts) usando <code>filtered</code> como fonte de dados.
-        </p>
+      <section className="card" ref={glosaRef}>
+        <h2 className="card-title">Glosas</h2>
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3">
+          <DistBar title="Glosas recorrentes" data={distGlosaRec} />
+          <DistBar title="Interesse em checagem antes do envio" data={distGlosaInterest} />
+          <DistBar title="Quem sofre mais" data={distGlosaWho} />
+        </div>
       </section>
 
-      <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-        <h2 className="text-lg font-bold text-slate-900">Glosas</h2>
-      </section>
-
-      <section className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5">
-        <h2 className="text-lg font-bold text-slate-900">Receitas Digitais</h2>
+      <section className="card" ref={rxRef}>
+        <h2 className="card-title">Receitas Digitais</h2>
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3">
+          <DistBar title="Geram retrabalho" data={distRxRework} />
+          <DistBar title="Dificuldade dos pacientes" data={distRxDiff} />
+          <DistBar title="Valor em ferramenta de apoio" data={distRxValue} />
+        </div>
       </section>
     </div>
   );
 }
+
+/* ========== estilos utilitários (Tailwind) ==========
+   Estes utilitários já costumam existir no seu projeto, mas deixo
+   aqui como referência de classes que usei: 
+   .card, .card-title, .input 
+   Se não existir, crie no seu CSS global:
+
+.card{ @apply rounded-2xl border border-slate-200 bg-white p-4 shadow-sm; }
+.card-title{ @apply text-lg font-bold text-slate-900; }
+.input{ @apply px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--brand-1)] focus:border-[var(--brand-1)];
+}
+*/
