@@ -19,7 +19,7 @@ type Answer = Record<string, any>;
 
 type Props = {
   kpi: KPI;
-  summaryRows: Array<Record<string, number | string>>; // mantido, mas não usado na nova tabela
+  summaryRows: Array<Record<string, number | string>>;
   answers: Answer[];
   chartRefs?: {
     noshowRef: React.RefObject<HTMLDivElement>;
@@ -31,19 +31,16 @@ type Props = {
 /* ===================== Branding & UI ===================== */
 
 const BRAND_BLUE = "#1976d2";
+const ACCENT = "#2575fc";
 const INK = "#0f172a";
 const INK_SOFT = "#64748b";
 const CARD_EDGE = "#e9edf7";
-const ACCENT = "#2575fc";
 
 /* ===================== Utils ===================== */
 
 function formatNow(): string {
   const d = new Date();
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(d);
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(d);
 }
 
 function usableHeight(startY: number, pageH: number, bottomPadding = 40) {
@@ -55,7 +52,7 @@ function centeredStartY(startY: number, pageH: number, blockH: number) {
   return startY + offset;
 }
 
-// Carrega /logo.png e retorna base64 (DataURL). Falhou? null.
+// Carrega /logo.png como DataURL base64 (falhou? retorna null)
 async function fetchAsDataURL(path: string): Promise<string | null> {
   try {
     const res = await fetch(path);
@@ -73,6 +70,8 @@ async function fetchAsDataURL(path: string): Promise<string | null> {
 
 /* ===================== Cabeçalho/Rodapé ===================== */
 
+const TOP_GAP = 24; // respiro extra após o cabeçalho em TODAS as páginas
+
 function drawHeader(
   doc: jsPDF,
   pageW: number,
@@ -84,7 +83,7 @@ function drawHeader(
   doc.setFillColor(BRAND_BLUE);
   doc.rect(0, 0, pageW, 6, "F");
 
-  // card
+  // card do header
   const headerH = 70;
   const cardX = marginX;
   const cardY = 14;
@@ -95,10 +94,10 @@ function drawHeader(
   doc.setLineWidth(1);
   doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
 
-  // bloco título + data (esquerda)
+  // título + data
   const leftPad = 18;
-  const titleY = cardY + 26 + 20; // levemente mais alto
-  const DATE_GAP = 22; // mais espaço até a data
+  const titleY = cardY + 26 + 20;
+  const DATE_GAP = 22;
 
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
@@ -110,7 +109,7 @@ function drawHeader(
   doc.setFontSize(10);
   doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, titleY + DATE_GAP);
 
-  // logo (direita)
+  // logo
   if (logoDataUrl) {
     const targetW = 160;
     const targetH = 48;
@@ -123,7 +122,7 @@ function drawHeader(
     } catch {}
   }
 
-  return cardY + headerH + 12; // início do conteúdo
+  return cardY + headerH + 12 + TOP_GAP; // y de início do conteúdo com respiro extra
 }
 
 function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
@@ -147,7 +146,7 @@ function newPage(
   return startY;
 }
 
-/* ===================== Cards KPI ===================== */
+/* ===================== KPI Cards ===================== */
 
 function drawKpiCard(
   doc: jsPDF,
@@ -162,8 +161,6 @@ function drawKpiCard(
   doc.setDrawColor(CARD_EDGE);
   doc.setFillColor("#ffffff");
   doc.roundedRect(x, y, w, h, 12, 12, "FD");
-
-  // top accent
   doc.setFillColor(accent);
   doc.roundedRect(x, y, w, 6, 12, 12, "F");
 
@@ -177,7 +174,7 @@ function drawKpiCard(
   doc.text(value, x + 16, y + 58);
 }
 
-/* ===================== Micro-charts ===================== */
+/* ===================== Distribuições / Micro-charts ===================== */
 
 type DistItem = { label: string; count: number; pct: string };
 const ROW_H = 20;
@@ -187,45 +184,27 @@ function measureBarBlock(lines: number) {
   return 8 + lines * (ROW_H + ROW_GAP);
 }
 
-// NOVA versão: % por respondentes daquela pergunta; opção para incluir/ocultar "Não informado"
+// % entre respondentes; retorna também "unknownCount"
 function dist(
   answers: Answer[],
   field: keyof Answer,
-  order: string[],
-  opts?: { includeUnknown?: boolean; unknownLabel?: string }
-): DistItem[] {
-  const includeUnknown = !!opts?.includeUnknown;
-  const unknownLabel = opts?.unknownLabel ?? "Não informado";
-
+  order: string[]
+): { items: DistItem[]; answered: number; unknownCount: number } {
   const counts: Record<string, number> = {};
   order.forEach((k) => (counts[k] = 0));
-  let unknownCount = 0;
+  let unknown = 0;
 
   answers.forEach((a) => {
     const v = (a[field] as string) ?? "";
-    if (!v || !order.includes(v)) {
-      unknownCount += 1;
-    } else {
-      counts[v] += 1;
-    }
+    if (!v || !order.includes(v)) unknown += 1;
+    else counts[v] += 1;
   });
 
-  const answeredTotal = Object.values(counts).reduce((s, n) => s + n, 0);
-  const denom = includeUnknown ? answeredTotal + unknownCount : answeredTotal;
+  const answered = Object.values(counts).reduce((s, n) => s + n, 0);
+  const toPct = (n: number) => (answered ? `${Math.round((n / answered) * 100)}%` : "0%");
 
-  const toPct = (n: number) => (denom ? `${Math.round((n / denom) * 100)}%` : "0%");
-
-  const items: DistItem[] = order.map((k) => ({
-    label: k,
-    count: counts[k],
-    pct: toPct(counts[k]),
-  }));
-
-  if (includeUnknown && unknownCount > 0) {
-    items.push({ label: unknownLabel, count: unknownCount, pct: toPct(unknownCount) });
-  }
-
-  return items;
+  const items = order.map((k) => ({ label: k, count: counts[k], pct: toPct(counts[k]) }));
+  return { items, answered, unknownCount: unknown };
 }
 
 function drawBarBlock(
@@ -242,11 +221,12 @@ function drawBarBlock(
   doc.text(title, x, y);
   y += 8;
 
-  const labelW = width * 0.40; // mais espaço para label
-  const barW = width * 0.60;
+  const labelW = width * 0.4;
+  const barW = width * 0.6;
   const maxPct = Math.max(...items.map((i) => parseInt(i.pct) || 0), 1);
 
-  items.forEach((it, idx) => {
+  const filtered = items.filter((it) => it.count > 0); // não desenhar categorias vazias
+  filtered.forEach((it, idx) => {
     const rowY = y + idx * (ROW_H + ROW_GAP);
 
     doc.setFont("helvetica", "normal");
@@ -265,10 +245,10 @@ function drawBarBlock(
     doc.roundedRect(x + labelW + 2, rowY + 2, Math.max(w, 2), ROW_H - 4, 5, 5, "F");
   });
 
-  return y + items.length * (ROW_H + ROW_GAP);
+  return y + filtered.length * (ROW_H + ROW_GAP);
 }
 
-/* ===================== Tabela “Detalhes” com curadoria ===================== */
+/* ===================== Tabelas curadas ===================== */
 
 const SENSITIVE_KEYS = new Set([
   "id",
@@ -295,7 +275,6 @@ const HEADER_MAP: Record<string, string> = {
   comments: "Observações",
 };
 
-// perguntas + opções (ordem)
 const QUESTIONS: Array<{ key: keyof Answer; label: string; options: string[] }> = [
   { key: "q_noshow_relevance", label: "No-show relevante?", options: ["Sim", "Não", "Parcialmente"] },
   { key: "q_noshow_has_system", label: "Sistema p/ no-show?", options: ["Sim", "Não"] },
@@ -308,9 +287,15 @@ const QUESTIONS: Array<{ key: keyof Answer; label: string; options: string[] }> 
   { key: "q_rx_tool_value", label: "Valor em ferramenta de apoio", options: ["Sim", "Não", "Talvez"] },
 ];
 
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 /* ===================== Componente ===================== */
 
-export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
+export default function ExportPDFButton({ kpi, answers }: Props) {
   const [loading, setLoading] = useState(false);
 
   const onExport = useCallback(async () => {
@@ -325,80 +310,15 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= CAPA ========= */
-      doc.setFillColor(BRAND_BLUE);
-      doc.rect(0, 0, pageW, 6, "F");
-
-      const coverX = marginX;
-      const coverY = 80;
-      const coverW = pageW - marginX * 2;
-
-      if (logoDataUrl) {
-        try {
-          doc.addImage(logoDataUrl, "PNG", coverX + coverW - 260, coverY - 20, 220, 66);
-        } catch {}
-      }
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(26);
-      doc.text("Relatório da Pesquisa", coverX, coverY + 20);
-
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK_SOFT);
-      doc.setFontSize(14);
-      doc.text("Clínicas e Consultórios — Sumário Executivo", coverX, coverY + 46);
-
-      doc.setFontSize(10);
-      doc.text(`Gerado em ${formatNow()}`, coverX, coverY + 66);
-
-      doc.setDrawColor(CARD_EDGE);
-      doc.setFillColor("#ffffff");
-      doc.roundedRect(coverX, coverY + 86, coverW, 110, 12, 12, "FD");
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(14);
-      doc.text("Resumo Executivo — Principais insights", coverX + 18, coverY + 110);
-
-      // insights simples
-      const insights: string[] = (() => {
-        const arr: string[] = [];
-        const ns = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
-        const nsYes = parseInt(ns.find((r) => r.label === "Sim")?.pct || "0");
-        if (nsYes >= 50) arr.push(`No-show relevante para ${nsYes}% dos respondentes — pede ação de mitigação.`);
-        const gr = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
-        const grYes = parseInt(gr.find((r) => r.label === "Sim")?.pct || "0");
-        if (grYes >= 40) arr.push(`Glosas recorrentes presentes (${grYes}%) — oportunidade de checagem pré-envio.`);
-        const rx = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
-        const rxYes = parseInt(rx.find((r) => r.label === "Sim")?.pct || "0");
-        if (rxYes >= 30) arr.push(`Receitas geram retrabalho (${rxYes}%) — padronização/assistente pode ajudar.`);
-        arr.push(
-          `Amostra: ${kpi.total} respostas | No-show ${kpi.noshowYesPct.toFixed(0)}% | Glosas ${kpi.glosaRecorrentePct.toFixed(0)}% | Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`
-        );
-        arr.push(`Próximo passo: piloto rápido em no-show e glosas + fluxo assistido para receitas.`);
-        return arr.slice(0, 5);
-      })();
-
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK);
-      doc.setFontSize(12);
-      let iy = coverY + 130;
-      insights.forEach((line) => {
-        doc.circle(coverX + 18, iy - 3, 2, "F");
-        doc.text(line, coverX + 28, iy, { maxWidth: coverW - 56 });
-        iy += 20;
-      });
-
+      /* ========= PÁGINA 1: Sumário + Resumo Executivo ========= */
+      let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= SUMÁRIO ========= */
-      doc.addPage();
-      const tocStartY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+      // 1) Sumário (primeiro)
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(16);
-      doc.text("Sumário", marginX, tocStartY + 6);
+      doc.text("Sumário", marginX, startY);
 
       const tocItems = [
         "Visão Geral (KPIs)",
@@ -411,187 +331,238 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(12);
       doc.setTextColor(INK_SOFT);
+      let y = startY + 22;
       tocItems.forEach((label, i) => {
-        doc.text(`${i + 1}. ${label}`, marginX, tocStartY + 30 + i * 18);
+        doc.text(`${i + 1}. ${label}`, marginX, y);
+        y += 16;
       });
-      drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= KPIs ========= */
-      let startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-      const gap = 16;
-      const cardW = (pageW - marginX * 2 - gap * 3) / 4;
-      const cardH = 82;
+      // 2) Resumo Executivo (na mesma página)
+      const insightsBoxTop = y + 10;
+      const insightsBoxH = 112; // altura do card; bullets quebram dentro
+      const contentBottom = insightsBoxTop + insightsBoxH;
 
-      let y = centeredStartY(startY, pageH, 14 + cardH);
+      // se não couber, pula p/ próxima página
+      if (contentBottom > pageH - 60) {
+        startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+        y = startY; // recomeça y
+      }
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, y, pageW - marginX * 2, insightsBoxH, 12, 12, "FD");
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
-      doc.text("Visão Geral", marginX, y + 2);
-      y += 14;
+      doc.text("Resumo Executivo — Principais insights", marginX + 18, y + 20);
 
-      drawKpiCard(doc, marginX + 0 * (cardW + gap), y, cardW, cardH, "Total de respostas", `${kpi.total}`, ACCENT);
-      drawKpiCard(doc, marginX + 1 * (cardW + gap), y, cardW, cardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
-      drawKpiCard(doc, marginX + 2 * (cardW + gap), y, cardW, cardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
-      drawKpiCard(doc, marginX + 3 * (cardW + gap), y, cardW, cardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(12);
+
+      // bullets de insights
+      const bullets = [
+        `Amostra consolidada: ${kpi.total} respostas.`,
+        `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
+          0
+        )}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
+        `Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.`,
+      ];
+      let iy = y + 40;
+      const maxW = pageW - marginX * 2 - 36;
+      bullets.forEach((line) => {
+        doc.circle(marginX + 18, iy - 3, 2, "F");
+        doc.text(line, marginX + 28, iy, { maxWidth: maxW });
+        iy += 20;
+      });
+
+      /* ========= KPIs ========= */
+      startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      const gap = 16;
+      const cardW = (pageW - marginX * 2 - gap * 3) / 4;
+      const cardH = 82;
+
+      let kpiY = centeredStartY(startY, pageH, 14 + cardH);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Visão Geral", marginX, kpiY + 2);
+      kpiY += 14;
+
+      drawKpiCard(doc, marginX + 0 * (cardW + gap), kpiY, cardW, cardH, "Total de respostas", `${kpi.total}`, ACCENT);
+      drawKpiCard(doc, marginX + 1 * (cardW + gap), kpiY, cardW, cardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 2 * (cardW + gap), kpiY, cardW, cardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 3 * (cardW + gap), kpiY, cardW, cardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
       drawFooter(doc, pageW, pageH, marginX);
 
       /* ========= No-show ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-      const noShowRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"], { includeUnknown: false });
-      const noShowSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"], { includeUnknown: false });
-      const noShowImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"], { includeUnknown: false });
+      const nsRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
+      const nsSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]);
+      const nsImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]);
 
-      const leftH = measureBarBlock(noShowRelev.length) + 18 + measureBarBlock(noShowSys.length);
-      const rightH = measureBarBlock(noShowImpact.length);
+      const leftH = measureBarBlock(nsRelev.items.length) + 18 + measureBarBlock(nsSys.items.length);
+      const rightH = measureBarBlock(nsImpact.items.length);
       const gridH = Math.max(leftH, rightH);
 
-      y = centeredStartY(startY, pageH, gridH);
+      let nsY = centeredStartY(startY, pageH, gridH);
       const colGap = 24;
       const colW = (pageW - marginX * 2 - colGap) / 2;
       const col1X = marginX;
       const col2X = marginX + colW + colGap;
 
-      let col1Y = y;
-      col1Y = drawBarBlock(doc, "Relevância", noShowRelev, col1X, col1Y, colW);
+      let col1Y = nsY;
+      col1Y = drawBarBlock(doc, "Relevância", nsRelev.items, col1X, col1Y, colW);
       col1Y += 18;
-      col1Y = drawBarBlock(doc, "Possui sistema que resolve", noShowSys, col1X, col1Y, colW);
+      col1Y = drawBarBlock(doc, "Possui sistema que resolve", nsSys.items, col1X, col1Y, colW);
 
-      let col2Y = y;
-      col2Y = drawBarBlock(doc, "Impacto financeiro mensal", noShowImpact, col2X, col2Y, colW);
+      let col2Y = nsY;
+      col2Y = drawBarBlock(doc, "Impacto financeiro mensal", nsImpact.items, col2X, col2Y, colW);
       drawFooter(doc, pageW, pageH, marginX);
 
       /* ========= Glosas ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-      const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"], { includeUnknown: false });
-      const glosaInterest = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"], { includeUnknown: false });
-      const glosaWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"], { includeUnknown: false });
+      const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
+      const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]);
+      const gWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]);
 
-      const gLeftH = measureBarBlock(glosaRec.length) + 18 + measureBarBlock(glosaInterest.length);
-      const gRightH = measureBarBlock(glosaWho.length);
+      const gLeftH = measureBarBlock(gRec.items.length) + 18 + measureBarBlock(gInt.items.length);
+      const gRightH = measureBarBlock(gWho.items.length);
       const gGridH = Math.max(gLeftH, gRightH);
 
-      y = centeredStartY(startY, pageH, gGridH);
-      let col1Y_glosa = y;
-      col1Y_glosa = drawBarBlock(doc, "Glosas recorrentes", glosaRec, col1X, col1Y_glosa, colW);
-      col1Y_glosa += 18;
-      col1Y_glosa = drawBarBlock(doc, "Interesse em checagem antes do envio", glosaInterest, col1X, col1Y_glosa, colW);
+      let gY = centeredStartY(startY, pageH, gGridH);
+      let col1Yg = gY;
+      col1Yg = drawBarBlock(doc, "Glosas recorrentes", gRec.items, col1X, col1Yg, colW);
+      col1Yg += 18;
+      col1Yg = drawBarBlock(doc, "Interesse em checagem antes do envio", gInt.items, col1X, col1Yg, colW);
 
-      let col2Y_glosa = y;
-      col2Y_glosa = drawBarBlock(doc, "Quem sofre mais", glosaWho, col2X, col2Y_glosa, colW);
+      let col2Yg = gY;
+      col2Yg = drawBarBlock(doc, "Quem sofre mais", gWho.items, col2X, col2Yg, colW);
       drawFooter(doc, pageW, pageH, marginX);
 
       /* ========= Receitas Digitais ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-      const rxRework = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"], { includeUnknown: false });
-      const rxDiff = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"], { includeUnknown: false });
-      const rxValue = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"], { includeUnknown: false });
+      const rxRw = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
+      const rxDif = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]);
+      const rxVal = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]);
 
-      const rLeftH = measureBarBlock(rxRework.length) + 18 + measureBarBlock(rxDiff.length);
-      const rRightH = measureBarBlock(rxValue.length);
+      const rLeftH = measureBarBlock(rxRw.items.length) + 18 + measureBarBlock(rxDif.items.length);
+      const rRightH = measureBarBlock(rxVal.items.length);
       const rGridH = Math.max(rLeftH, rRightH);
 
-      y = centeredStartY(startY, pageH, rGridH);
-      let col1Y_rx = y;
-      col1Y_rx = drawBarBlock(doc, "Receitas geram retrabalho", rxRework, col1X, col1Y_rx, colW);
-      col1Y_rx += 18;
-      col1Y_rx = drawBarBlock(doc, "Pacientes têm dificuldade", rxDiff, col1X, col1Y_rx, colW);
+      let rY = centeredStartY(startY, pageH, rGridH);
+      let col1Yr = rY;
+      col1Yr = drawBarBlock(doc, "Receitas geram retrabalho", rxRw.items, col1X, col1Yr, colW);
+      col1Yr += 18;
+      col1Yr = drawBarBlock(doc, "Pacientes têm dificuldade", rxDif.items, col1X, col1Yr, colW);
 
-      let col2Y_rx = y;
-      col2Y_rx = drawBarBlock(doc, "Valor em ferramenta de apoio", rxValue, col2X, col2Y_rx, colW);
+      let col2Yr = rY;
+      col2Yr = drawBarBlock(doc, "Valor em ferramenta de apoio", rxVal.items, col2X, col2Yr, colW);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= Resumo consolidado (tabela longa e clara) ========= */
+      /* ========= Resumo consolidado (subtabelas por pergunta) ========= */
       const HEADER_GAP = 28;
-      const tableTopMargin = 14 + 70 + 12 + HEADER_GAP;
-
-      // monta linhas Pergunta | Opção | Qtde | %
-      const summaryLong: Array<{ pergunta: string; opcao: string; qtde: number; pct: string }> = [];
-      QUESTIONS.forEach((q) => {
-        const d = dist(answers, q.key, q.options, { includeUnknown: true, unknownLabel: "Não informado" });
-        // recalcula % sobre quem respondeu (sem "Não informado"):
-        const answered = d.filter((x) => x.label !== "Não informado");
-        const denom = answered.reduce((s, x) => s + x.count, 0) || 0;
-        d.forEach((item) => {
-          if (item.count === 0) return; // só mostra opções existentes
-          let pct = "0%";
-          if (item.label === "Não informado") {
-            // % sobre o total (respondidos + não respondidos) para transparência
-            const total = answered.reduce((s, x) => s + x.count, 0) + (d.find((x) => x.label === "Não informado")?.count || 0);
-            pct = total ? `${Math.round((item.count / total) * 100)}%` : "0%";
-          } else {
-            pct = denom ? `${Math.round((item.count / denom) * 100)}%` : "0%";
-          }
-          summaryLong.push({ pergunta: q.label, opcao: item.label, qtde: item.count, pct });
-        });
-      });
+      const tableTopMargin = 14 + 70 + 12 + HEADER_GAP + TOP_GAP;
 
       doc.addPage();
-      autoTable(doc as any, {
-        styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
-        headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
-        alternateRowStyles: { fillColor: "#fbfdff" },
-        body: summaryLong,
-        columns: [
-          { header: "Pergunta", dataKey: "pergunta" },
-          { header: "Opção", dataKey: "opcao" },
-          { header: "Qtde", dataKey: "qtde" },
-          { header: "%", dataKey: "pct" },
-        ],
-        columnStyles: {
-          pergunta: { cellWidth: 240, overflow: "linebreak" },
-          opcao: { cellWidth: 220, overflow: "linebreak" },
-          qtde: { cellWidth: 60, halign: "right" },
-          pct: { cellWidth: 50, halign: "right" },
-        },
-        tableWidth: pageW - marginX * 2,
-        margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
-        theme: "grid",
-        didDrawPage: () => {
-          const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(INK);
-          doc.setFontSize(14);
-          doc.text("Resumo consolidado por pergunta (opções e percentuais)", marginX, sY + HEADER_GAP - 10);
-          drawFooter(doc, pageW, pageH, marginX);
-        },
-      });
+      const drawSectionHeader = () => {
+        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text("Resumo consolidado por pergunta", marginX, sY + HEADER_GAP - 10);
+        drawFooter(doc, pageW, pageH, marginX);
+      };
+      drawSectionHeader();
 
-      /* ========= Respostas detalhadas (curadas) ========= */
-      const allKeys = answers && answers.length ? Array.from(new Set(answers.flatMap(a => Object.keys(a ?? {})))) : [];
-      const questionKeys = allKeys.filter(k => k.startsWith("q_") && !SENSITIVE_KEYS.has(k));
-      if (allKeys.includes("comments") && !SENSITIVE_KEYS.has("comments")) questionKeys.push("comments");
+      let nextStartY = tableTopMargin;
 
-      const detailCols = questionKeys.map((k) => ({ header: HEADER_MAP[k] ?? k, dataKey: k }));
-      const detailBody = answers.map((a) => {
-        const row: Record<string, any> = {};
-        questionKeys.forEach((k) => {
-          let v = (a as any)[k];
-          if (typeof v === "boolean") v = v ? "Sim" : "Não";
-          if (v == null || v === "") v = "—";
-          row[k] = v;
+      for (const q of QUESTIONS) {
+        const { items, answered, unknownCount } = dist(answers, q.key, q.options);
+        const body = items.filter((it) => it.count > 0).map((it) => ({ opcao: it.label, qtde: it.count, pct: it.pct }));
+        if (answered === 0 && unknownCount === 0) continue;
+
+        // se aproximar do rodapé, nova página antes de desenhar a sub-tabela
+        if (nextStartY > pageH - 200) {
+          doc.addPage();
+          drawSectionHeader();
+          nextStartY = tableTopMargin;
+        }
+
+        autoTable(doc as any, {
+          startY: nextStartY,
+          styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+          headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+          body: body.length ? body : [{ opcao: "—", qtde: 0, pct: "0%" }],
+          columns: [
+            { header: q.label, dataKey: "opcao" },
+            { header: "Qtde", dataKey: "qtde" },
+            { header: "% (entre respondentes)", dataKey: "pct" },
+          ],
+          columnStyles: {
+            opcao: { cellWidth: 300, overflow: "linebreak" },
+            qtde: { cellWidth: 60, halign: "right" },
+            pct: { cellWidth: 160, halign: "right" },
+          },
+          tableWidth: pageW - marginX * 2,
+          margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
+          theme: "grid",
+          rowPageBreak: "auto",
+          foot: [
+            [
+              `Não respondido: ${unknownCount} (${((unknownCount / answers.length) * 100 || 0).toFixed(
+                0
+              )}% do total)`,
+              "",
+              "",
+            ],
+          ],
+          footStyles: { fontSize: 9, textColor: INK_SOFT },
+          didDrawPage: () => drawSectionHeader(),
         });
-        return row;
-      });
 
-      const colStyles: Record<string, any> = {};
-      questionKeys.forEach((k) => {
-        colStyles[k] = {
-          cellWidth: k === "comments" ? 220 : 120,
-          overflow: "linebreak",
-        };
-      });
+        nextStartY = (doc as any).lastAutoTable.finalY + 28;
+      }
 
-      if (detailCols.length) {
+      /* ========= Respostas detalhadas (curadas + chunk) ========= */
+      const allKeys = answers.length ? Array.from(new Set(answers.flatMap((a) => Object.keys(a ?? {})))) : [];
+      const questionKeys = allKeys.filter((k) => k.startsWith("q_") && !SENSITIVE_KEYS.has(k));
+      const includeComments = allKeys.includes("comments") && !SENSITIVE_KEYS.has("comments");
+
+      const groups = chunk(questionKeys, 6);
+      if (includeComments && groups.length) groups[groups.length - 1].push("comments");
+      else if (includeComments) groups.push(["comments"]);
+
+      const detailTitle = "Respostas detalhadas (sem identificação sensível)";
+      for (let gi = 0; gi < groups.length; gi++) {
+        const cols = groups[gi];
+        const detailCols = cols.map((k) => ({ header: HEADER_MAP[k] ?? k, dataKey: k }));
+        const detailBody = answers.map((a) => {
+          const row: Record<string, any> = {};
+          cols.forEach((k) => {
+            let v = (a as any)[k];
+            if (typeof v === "boolean") v = v ? "Sim" : "Não";
+            if (v == null || v === "") v = "—";
+            row[k] = v;
+          });
+          return row;
+        });
+
+        const colStyles: Record<string, any> = {};
+        cols.forEach((k) => {
+          colStyles[k] = { cellWidth: k === "comments" ? 260 : 120, overflow: "linebreak" };
+        });
+
         doc.addPage();
         autoTable(doc as any, {
-          styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 5, lineColor: CARD_EDGE },
-          headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold" },
+          styles: { font: "helvetica", fontSize: 9, textColor: INK, cellPadding: 5, lineColor: CARD_EDGE },
+          headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold", valign: "middle" },
           body: detailBody,
           columns: detailCols,
           columnStyles: colStyles,
           tableWidth: pageW - marginX * 2,
-          margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
+          margin: { left: marginX, right: marginX, top: 14 + 70 + 12 + 28 + TOP_GAP, bottom: 26 },
           theme: "grid",
           rowPageBreak: "auto",
           didDrawPage: () => {
@@ -599,7 +570,8 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
             doc.setFont("helvetica", "bold");
             doc.setTextColor(INK);
             doc.setFontSize(14);
-            doc.text("Respostas detalhadas (sem identificação sensível)", marginX, sY + HEADER_GAP - 10);
+            const suffix = groups.length > 1 ? ` — parte ${gi + 1}/${groups.length}` : "";
+            doc.text(detailTitle + suffix, marginX, sY + 28 - 10);
             drawFooter(doc, pageW, pageH, marginX);
           },
         });
@@ -611,7 +583,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [answers, kpi, summaryRows]);
+  }, [answers, kpi]);
 
   return (
     <button
