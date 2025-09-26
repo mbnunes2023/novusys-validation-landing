@@ -20,7 +20,7 @@ type Answer = Record<string, any>;
 
 type Props = {
   kpi: KPI;
-  summaryRows: Array<Record<string, number | string>>; // mantido para compatibilidade
+  summaryRows: Array<Record<string, number | string>>; // compat
   answers: Answer[];
   chartRefs?: {
     noshowRef: React.RefObject<HTMLDivElement>;
@@ -29,7 +29,7 @@ type Props = {
   };
 };
 
-/* ===================== Branding & UI ===================== */
+/* ===================== Branding ===================== */
 
 const BRAND_BLUE = "#1976d2";
 const ACCENT = "#2575fc";
@@ -103,8 +103,8 @@ function drawHeader(
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(18);
-  const titleH = 18; // approx
-  const dateH = 10; // approx
+  const titleH = 18;
+  const dateH = 10;
   const lineGap = 6;
   const textBlockH = titleH + lineGap + dateH;
   const titleY = centerY - textBlockH / 2 + titleH * 0.75;
@@ -180,9 +180,10 @@ function drawKpiCard(
   doc.text(value, x + 16, y + 58);
 }
 
-/* ===================== Micro-charts helpers ===================== */
+/* ===================== Micro-charts ===================== */
 
 type DistItem = { label: string; count: number; pct: string };
+
 const ROW_H = 20;
 const ROW_GAP = 6;
 
@@ -190,7 +191,6 @@ function measureBarBlock(lines: number) {
   return 8 + lines * (ROW_H + ROW_GAP);
 }
 
-// % entre respondentes
 function dist(
   answers: Answer[],
   field: keyof Answer,
@@ -254,13 +254,12 @@ function drawBarBlock(
   return y + filtered.length * (ROW_H + ROW_GAP);
 }
 
-/* ======== Versão compacta para caber tudo na Página 2 ======== */
-
-const CROW_H = 14;  // altura da barra compacta
+/* ======== Versão compacta (para caber tudo na Página 2) ======== */
+const CROW_H = 14;
 const CROW_GAP = 4;
 
 function measureBarBlockCompact(lines: number) {
-  return 7 + lines * (CROW_H + CROW_GAP) + 2; // título + linhas + respiro
+  return 7 + lines * (CROW_H + CROW_GAP) + 2;
 }
 
 function drawBarBlockCompact(
@@ -271,7 +270,6 @@ function drawBarBlockCompact(
   y: number,
   width: number
 ) {
-  // título compacto
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(12);
@@ -289,17 +287,13 @@ function drawBarBlockCompact(
 
   nonEmpty.forEach((it, idx) => {
     const rowY = y + idx * (CROW_H + CROW_GAP);
-
-    // label
     const label = `${it.label} — ${it.count} (${it.pct})`;
     doc.text(label, x, rowY + 10, { maxWidth: labelW - 4 });
 
-    // trilho
     doc.setDrawColor(CARD_EDGE);
     doc.setFillColor("#fff");
     doc.roundedRect(x + labelW, rowY, barW, CROW_H, 5, 5, "FD");
 
-    // barra
     const pct = parseInt(it.pct) || 0;
     const w = (pct / maxPct) * (barW - 8);
     doc.setFillColor(BRAND_BLUE);
@@ -309,7 +303,7 @@ function drawBarBlockCompact(
   return y + nonEmpty.length * (CROW_H + CROW_GAP);
 }
 
-/* ===================== Tabelas curadas ===================== */
+/* ===================== Tabelas: mapas e helpers ===================== */
 
 const SENSITIVE_KEYS = new Set([
   "id",
@@ -354,6 +348,105 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+/* ===================== Consolidação por tema ===================== */
+
+type SectionKey = "noshow" | "glosas" | "receitas";
+const SECTIONS: Record<
+  SectionKey,
+  { title: string; questions: Array<{ key: keyof Answer; label: string; options: string[] }> }
+> = {
+  noshow: {
+    title: "No-show (Faltas em consultas)",
+    questions: [
+      { key: "q_noshow_relevance", label: "Relevância", options: ["Sim", "Não", "Parcialmente"] },
+      { key: "q_noshow_has_system", label: "Possui sistema que resolve", options: ["Sim", "Não"] },
+      { key: "q_noshow_financial_impact", label: "Impacto financeiro mensal", options: ["Baixo impacto", "Médio impacto", "Alto impacto"] },
+    ],
+  },
+  glosas: {
+    title: "Glosas de convênios (Faturamento)",
+    questions: [
+      { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não", "Às vezes"] },
+      { key: "q_glosa_interest", label: "Interesse em checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
+      { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
+    ],
+  },
+  receitas: {
+    title: "Receitas digitais e telemedicina",
+    questions: [
+      { key: "q_rx_rework", label: "Receitas geram retrabalho", options: ["Sim", "Não", "Raramente"] },
+      { key: "q_rx_elderly_difficulty", label: "Pacientes têm dificuldade", options: ["Sim", "Não", "Em parte"] },
+      { key: "q_rx_tool_value", label: "Valor em ferramenta de apoio", options: ["Sim", "Não", "Talvez"] },
+    ],
+  },
+};
+
+function renderSectionTable(
+  doc: jsPDF,
+  section: (typeof SECTIONS)[SectionKey],
+  answers: Answer[],
+  pageW: number,
+  pageH: number,
+  marginX: number,
+  title: string,
+  logoDataUrl?: string | null
+) {
+  type Row = { pergunta: string; opcao: string; qtde: number; pct: string };
+  const rows: Row[] = [];
+  let answeredAll = 0;
+  let notAnsweredAll = 0;
+
+  section.questions.forEach((q) => {
+    const { items, answered, unknownCount } = dist(answers, q.key, q.options);
+    answeredAll += answered;
+    notAnsweredAll += unknownCount;
+
+    items
+      .filter((it) => it.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .forEach((it) => {
+        rows.push({ pergunta: q.label, opcao: it.label, qtde: it.count, pct: it.pct });
+      });
+  });
+
+  const HEADER_GAP = 28;
+  const topY = 14 + 72 + 12 + HEADER_GAP + TOP_GAP;
+
+  autoTable(doc as any, {
+    startY: topY,
+    styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+    headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+    body: rows.length ? rows : [{ pergunta: "—", opcao: "—", qtde: 0, pct: "0%" }],
+    columns: [
+      { header: section.title, dataKey: "pergunta" },
+      { header: "Opção", dataKey: "opcao" },
+      { header: "Qtde", dataKey: "qtde" },
+      { header: "% (entre respondentes)", dataKey: "pct" },
+    ],
+    columnStyles: {
+      pergunta: { cellWidth: 260, overflow: "linebreak" },
+      opcao: { cellWidth: 220, overflow: "linebreak" },
+      qtde: { cellWidth: 60, halign: "right" },
+      pct: { cellWidth: 160, halign: "right" },
+    },
+    tableWidth: pageW - marginX * 2,
+    margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
+    theme: "grid",
+    rowPageBreak: "auto",
+    didDrawPage: () => {
+      const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+      const sampleTxt = `Respondido: ${answeredAll} • Não respondido: ${notAnsweredAll}`;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK_SOFT);
+      doc.setFontSize(11);
+      doc.text(sampleTxt, marginX, sY + HEADER_GAP - 12);
+      drawFooter(doc, pageW, pageH, marginX);
+    },
+  });
+
+  return (doc as any).lastAutoTable.finalY;
+}
+
 /* ===================== Componente ===================== */
 
 export default function ExportPDFButton({ kpi, answers }: Props) {
@@ -371,7 +464,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁGINA 1: Sumário (card dinâmico) + Resumo Executivo (card dinâmico) ========= */
+      /* ========= PÁGINA 1: Sumário + Resumo Executivo ========= */
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
@@ -380,13 +473,12 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const TITLE_GAP = 26;
       const LINE = 18;
 
-      // SUMÁRIO
+      // SUMÁRIO (texto preto)
       const tocItems = [
         "Visão Geral (KPIs + distribuições)",
-        "Resumo consolidado",
+        "Consolidado por tema",
         "Respostas detalhadas",
       ];
-
       const summaryTitleH = 16;
       const summaryListH = tocItems.length * LINE;
       const summaryPadBottom = 20;
@@ -407,7 +499,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.text("Sumário", marginX + PAD_X, y + TITLE_GAP);
 
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK);
+      doc.setTextColor(INK); // <- preto
       doc.setFontSize(12);
 
       let listY = y + TITLE_GAP + summaryTitleH + 8;
@@ -460,14 +552,13 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         by += LINE;
       });
 
-      /* ========= PÁGINA 2: Visão Geral (KPIs + blocos compactos 3×3) ========= */
+      /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3 compacta) ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const gap = 16;
       const kpiCardW = (pageW - marginX * 2 - gap * 3) / 4;
       const kpiCardH = 82;
 
-      // Título
       let kpiY = startY;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
@@ -475,13 +566,11 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.text("Visão Geral", marginX, kpiY + 2);
       kpiY += 14;
 
-      // KPIs
       drawKpiCard(doc, marginX + 0 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "Total de respostas", `${kpi.total}`, ACCENT);
       drawKpiCard(doc, marginX + 1 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
       drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
       drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
 
-      // Distribuições compactas (3×3)
       let gridTop = kpiY + kpiCardH + 24;
 
       const nsRelev  = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items;
@@ -520,7 +609,6 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         const h = measureBarBlockCompact(b.items.length);
 
         if (yCompact + h > pageH - 60) {
-          // quebra e continua com título
           startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
           doc.setFont("helvetica", "bold");
           doc.setTextColor(INK);
@@ -535,7 +623,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         const col = i % COLS;
         if (col === COLS - 1) {
           x = marginX;
-          yCompact += Math.max(h, 74); // passo vertical confortável
+          yCompact += Math.max(h, 74);
         } else {
           x += COL_W + COL_GAP;
         }
@@ -543,62 +631,13 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 3+ — Resumo consolidado (subtabelas por pergunta) ========= */
-      const HEADER_GAP = 28;
-      const tableTopMargin = 14 + 72 + 12 + HEADER_GAP + TOP_GAP;
-
-      doc.addPage();
-      const drawSectionHeader = () => {
-        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(INK);
-        doc.setFontSize(14);
-        doc.text("Resumo consolidado por pergunta", marginX, sY + HEADER_GAP - 10);
-        drawFooter(doc, pageW, pageH, marginX);
-      };
-      drawSectionHeader();
-
-      let nextStartY = tableTopMargin;
-
-      for (const q of QUESTIONS) {
-        const { items, answered, unknownCount } = dist(answers, q.key, q.options);
-        const body = items.filter((it) => it.count > 0).map((it) => ({ opcao: it.label, qtde: it.count, pct: it.pct }));
-        if (answered === 0 && unknownCount === 0) continue;
-
-        if (nextStartY > pageH - 200) {
-          doc.addPage();
-          drawSectionHeader();
-          nextStartY = tableTopMargin;
-        }
-
-        autoTable(doc as any, {
-          startY: nextStartY,
-          styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
-          headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
-          body: body.length ? body : [{ opcao: "—", qtde: 0, pct: "0%" }],
-          columns: [
-            { header: q.label, dataKey: "opcao" },
-            { header: "Qtde", dataKey: "qtde" },
-            { header: "% (entre respondentes)", dataKey: "pct" },
-          ],
-          columnStyles: {
-            opcao: { cellWidth: 300, overflow: "linebreak" },
-            qtde: { cellWidth: 60, halign: "right" },
-            pct:  { cellWidth: 160, halign: "right" },
-          },
-          tableWidth: pageW - marginX * 2,
-          margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
-          theme: "grid",
-          rowPageBreak: "auto",
-          foot: [[`Não respondido: ${unknownCount} (${((unknownCount / answers.length) * 100 || 0).toFixed(0)}% do total)`, "", ""]],
-          footStyles: { fontSize: 9, textColor: INK_SOFT },
-          didDrawPage: () => drawSectionHeader(),
-        });
-
-        nextStartY = (doc as any).lastAutoTable.finalY + 28;
+      /* ========= PÁG. 3–5: Consolidado por TEMA ========= */
+      for (const key of ["noshow", "glosas", "receitas"] as SectionKey[]) {
+        doc.addPage();
+        renderSectionTable(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
       }
 
-      /* ========= PÁG. N — Respostas detalhadas (curadas + chunk) ========= */
+      /* ========= PÁG. N: Respostas detalhadas ========= */
       const allKeys = answers.length ? Array.from(new Set(answers.flatMap((a) => Object.keys(a ?? {})))) : [];
       const questionKeys = allKeys.filter((k) => k.startsWith("q_") && !SENSITIVE_KEYS.has(k));
       const includeComments = allKeys.includes("comments") && !SENSITIVE_KEYS.has("comments");
@@ -656,7 +695,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [answers, kpi]); // sem summaryRows
+  }, [answers, kpi]);
 
   return (
     <button
