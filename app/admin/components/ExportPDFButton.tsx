@@ -407,7 +407,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.text("Sumário", marginX + PAD_X, y + TITLE_GAP);
 
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK_SOFT);
+      doc.setTextColor(INK);
       doc.setFontSize(12);
 
       let listY = y + TITLE_GAP + summaryTitleH + 8;
