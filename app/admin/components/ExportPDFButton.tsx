@@ -29,7 +29,7 @@ type Props = {
   };
 };
 
-/* ===================== Branding ===================== */
+/* ===================== Branding / UI ===================== */
 
 const BRAND_BLUE = "#1976d2";
 const ACCENT = "#2575fc";
@@ -41,19 +41,14 @@ const CARD_EDGE = "#e9edf7";
 
 function formatNow(): string {
   const d = new Date();
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(d);
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(d);
 }
 
-function usableHeight(startY: number, pageH: number, bottomPadding = 40) {
-  return Math.max(0, pageH - bottomPadding - startY);
-}
-function centeredStartY(startY: number, pageH: number, blockH: number) {
-  const avail = usableHeight(startY, pageH);
-  const offset = Math.max(0, (avail - blockH) / 2);
-  return startY + offset;
-}
+const TOP_GAP = 24; // respiro abaixo do header
 
-// /public/logo.png -> DataURL
 async function fetchAsDataURL(path: string): Promise<string | null> {
   try {
     const res = await fetch(path);
@@ -71,8 +66,6 @@ async function fetchAsDataURL(path: string): Promise<string | null> {
 
 /* ===================== Cabeçalho/Rodapé ===================== */
 
-const TOP_GAP = 24; // respiro após header
-
 function drawHeader(
   doc: jsPDF,
   pageW: number,
@@ -85,27 +78,25 @@ function drawHeader(
   doc.rect(0, 0, pageW, 6, "F");
 
   // card do header
-  const headerH = 72;
-  const cardX = marginX;
   const cardY = 14;
+  const cardH = 72;
+  const cardX = marginX;
   const cardW = pageW - marginX * 2;
 
-  doc.setFillColor("#ffffff");
+  doc.setFillColor("#fff");
   doc.setDrawColor(CARD_EDGE);
   doc.setLineWidth(1);
-  doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
+  doc.roundedRect(cardX, cardY, cardW, cardH, 10, 10, "FD");
 
-  // centralização vertical
-  const centerY = cardY + headerH / 2;
-
-  // bloco texto (esquerda)
+  const centerY = cardY + cardH / 2;
   const leftPad = 18;
+
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(18);
   const titleH = 18;
-  const dateH = 10;
   const lineGap = 6;
+  const dateH = 10;
   const textBlockH = titleH + lineGap + dateH;
   const titleY = centerY - textBlockH / 2 + titleH * 0.75;
 
@@ -116,7 +107,7 @@ function drawHeader(
   doc.setFontSize(10);
   doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, titleY + lineGap + 10);
 
-  // logo (direita), centralizado verticalmente
+  // logo à direita
   if (logoDataUrl) {
     const targetW = 170;
     const targetH = 50;
@@ -128,7 +119,7 @@ function drawHeader(
     } catch {}
   }
 
-  return cardY + headerH + 12 + TOP_GAP;
+  return cardY + cardH + 12 + TOP_GAP; // y inicial para conteúdo
 }
 
 function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
@@ -147,9 +138,71 @@ function newPage(
   opts: { title: string; marginX: number; pageW: number; pageH: number; logoDataUrl?: string | null }
 ) {
   doc.addPage();
-  const startY = drawHeader(doc, opts.pageW, opts.marginX, opts.title, opts.logoDataUrl);
+  const y = drawHeader(doc, opts.pageW, opts.marginX, opts.title, opts.logoDataUrl);
   drawFooter(doc, opts.pageW, opts.pageH, opts.marginX);
-  return startY;
+  return y;
+}
+
+/* ===================== Barras (compactas + índices) ===================== */
+
+type DistItem = { label: string; count: number; pct: string };
+
+const CROW_H = 14;
+const CROW_GAP = 4;
+
+function measureBarBlockCompact(lines: number) {
+  return 7 + lines * (CROW_H + CROW_GAP) + 2;
+}
+
+function drawBarBlockCompact(
+  doc: jsPDF,
+  title: string,
+  items: DistItem[],
+  x: number,
+  y: number,
+  width: number
+) {
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(INK);
+  doc.setFontSize(12);
+  doc.text(title, x, y);
+  y += 7;
+
+  const labelW = width * 0.44;
+  const barW = width * 0.56;
+
+  const nonEmpty = items.filter((i) => i.count > 0);
+  const maxPct = Math.max(...nonEmpty.map((i) => parseInt(i.pct) || 0), 1);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(INK_SOFT);
+
+  nonEmpty.forEach((it, idx) => {
+    const rowY = y + idx * (CROW_H + CROW_GAP);
+    const label = `${it.label} — ${it.count} (${it.pct})`;
+    doc.text(label, x, rowY + 10, { maxWidth: labelW - 4 });
+
+    // trilho
+    doc.setDrawColor(CARD_EDGE);
+    doc.setFillColor("#fff");
+    doc.roundedRect(x + labelW, rowY, barW, CROW_H, 5, 5, "FD");
+
+    // índice 0% e 100%
+    doc.setFontSize(8);
+    doc.setTextColor(INK_SOFT);
+    doc.text("0%", x + labelW + 2, rowY - 2);
+    const hundredW = doc.getTextWidth("100%");
+    doc.text("100%", x + labelW + barW - hundredW - 2, rowY - 2);
+
+    // barra preenchida
+    const pct = parseInt(it.pct) || 0;
+    const w = (pct / maxPct) * (barW - 8);
+    doc.setFillColor(BRAND_BLUE);
+    doc.roundedRect(x + labelW + 2, rowY + 2, Math.max(w, 2), CROW_H - 4, 4, 4, "F");
+  });
+
+  return y + nonEmpty.length * (CROW_H + CROW_GAP);
 }
 
 /* ===================== KPI Cards ===================== */
@@ -165,7 +218,7 @@ function drawKpiCard(
   accent = BRAND_BLUE
 ) {
   doc.setDrawColor(CARD_EDGE);
-  doc.setFillColor("#ffffff");
+  doc.setFillColor("#fff");
   doc.roundedRect(x, y, w, h, 12, 12, "FD");
   doc.setFillColor(accent);
   doc.roundedRect(x, y, w, 6, 12, 12, "F");
@@ -180,16 +233,7 @@ function drawKpiCard(
   doc.text(value, x + 16, y + 58);
 }
 
-/* ===================== Micro-charts ===================== */
-
-type DistItem = { label: string; count: number; pct: string };
-
-const ROW_H = 20;
-const ROW_GAP = 6;
-
-function measureBarBlock(lines: number) {
-  return 8 + lines * (ROW_H + ROW_GAP);
-}
+/* ===================== Distribuições ===================== */
 
 function dist(
   answers: Answer[],
@@ -208,94 +252,33 @@ function dist(
 
   const answered = Object.values(counts).reduce((s, n) => s + n, 0);
   const toPct = (n: number) => (answered ? `${Math.round((n / answered) * 100)}%` : "0%");
-
   const items = order.map((k) => ({ label: k, count: counts[k], pct: toPct(counts[k]) }));
   return { items, answered, unknownCount: unknown };
 }
 
-/* ======== Compacto ======== */
-const CROW_H = 14;
-const CROW_GAP = 4;
+/* ===================== Tabelas / Mapas ===================== */
 
-function measureBarBlockCompact(lines: number) {
-  return 7 + lines * (CROW_H + CROW_GAP) + 2;
+function safeText(v: any): string {
+  if (v == null || v === "") return "Não informado";
+  if (typeof v === "boolean") return v ? "Sim" : "Não";
+  return String(v);
 }
 
-function drawBarBlockCompact(
-  doc: jsPDF,
-  title: string,
-  items: { label: string; count: number; pct: string }[],
-  x: number,
-  y: number,
-  width: number
-) {
+function drawPill(doc: jsPDF, x: number, y: number, text: string) {
+  const padX = 6;
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(INK);
-  doc.setFontSize(12);
-  doc.text(title, x, y);
-  y += 7;
-
-  const labelW = width * 0.44;
-  const barW = width * 0.56;
-  const nonEmpty = items.filter((i) => i.count > 0);
-  const maxPct = Math.max(...nonEmpty.map((i) => parseInt(i.pct) || 0), 1);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(INK_SOFT);
-
-  nonEmpty.forEach((it, idx) => {
-    const rowY = y + idx * (CROW_H + CROW_GAP);
-    const label = `${it.label} — ${it.count} (${it.pct})`;
-    doc.text(label, x, rowY + 10, { maxWidth: labelW - 4 });
-
-    doc.setDrawColor(CARD_EDGE);
-    doc.setFillColor("#fff");
-    doc.roundedRect(x + labelW, rowY, barW, CROW_H, 5, 5, "FD");
-
-    const pct = parseInt(it.pct) || 0;
-    const w = (pct / maxPct) * (barW - 8);
-    doc.setFillColor(BRAND_BLUE);
-    doc.roundedRect(x + labelW + 2, rowY + 2, Math.max(w, 2), CROW_H - 4, 4, 4, "F");
-  });
-
-  return y + nonEmpty.length * (CROW_H + CROW_GAP);
+  doc.setFontSize(10);
+  const w = doc.getTextWidth(text) + padX * 2;
+  const h = 18;
+  doc.setDrawColor(CARD_EDGE);
+  doc.setFillColor("#f6f9ff");
+  doc.roundedRect(x, y, w, h, 9, 9, "FD");
+  doc.setTextColor(BRAND_BLUE);
+  doc.text(text, x + padX, y + 12);
+  return { width: w, height: h };
 }
 
-/* ===================== Tabelas/Mapas ===================== */
-
-const SENSITIVE_KEYS = new Set([
-  "id",
-  "created_at",
-  "doctor_name",
-  "crm",
-  "contact",
-  "consent",
-  "consent_contact",
-  "doctor_role",
-  "clinic_size",
-]);
-
-const HEADER_MAP: Record<string, string> = {
-  q_noshow_relevance: "No-show relevante?",
-  q_noshow_has_system: "Sistema p/ no-show?",
-  q_noshow_financial_impact: "Impacto financeiro",
-  q_glosa_is_problem: "Glosas recorrentes?",
-  q_glosa_interest: "Checagem antes do envio",
-  q_glosa_who_suffers: "Quem sofre mais",
-  q_rx_rework: "Receitas geram retrabalho?",
-  q_rx_elderly_difficulty: "Pacientes têm dificuldade?",
-  q_rx_tool_value: "Valor em ferramenta de apoio",
-  comments: "Observações",
-};
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-/* ===================== Consolidado por tema (apêndice opcional) ===================== */
+/* ===================== Seções temáticas (apêndice) ===================== */
 
 type SectionKey = "noshow" | "glosas" | "receitas";
 const SECTIONS: Record<
@@ -307,7 +290,11 @@ const SECTIONS: Record<
     questions: [
       { key: "q_noshow_relevance", label: "Relevância", options: ["Sim", "Não", "Parcialmente"] },
       { key: "q_noshow_has_system", label: "Possui sistema que resolve", options: ["Sim", "Não"] },
-      { key: "q_noshow_financial_impact", label: "Impacto financeiro mensal", options: ["Baixo impacto", "Médio impacto", "Alto impacto"] },
+      {
+        key: "q_noshow_financial_impact",
+        label: "Impacto financeiro mensal",
+        options: ["Baixo impacto", "Médio impacto", "Alto impacto"],
+      },
     ],
   },
   glosas: {
@@ -328,7 +315,7 @@ const SECTIONS: Record<
   },
 };
 
-function renderSectionTableAppendix(
+function renderSectionTable(
   doc: jsPDF,
   section: (typeof SECTIONS)[SectionKey],
   answers: Answer[],
@@ -347,13 +334,10 @@ function renderSectionTableAppendix(
     const { items, answered, unknownCount } = dist(answers, q.key, q.options);
     answeredAll += answered;
     notAnsweredAll += unknownCount;
-
     items
       .filter((it) => it.count > 0)
       .sort((a, b) => b.count - a.count)
-      .forEach((it) => {
-        rows.push({ pergunta: q.label, opcao: it.label, qtde: it.count, pct: it.pct });
-      });
+      .forEach((it) => rows.push({ pergunta: q.label, opcao: it.label, qtde: it.count, pct: it.pct }));
   });
 
   const HEADER_GAP = 28;
@@ -362,7 +346,7 @@ function renderSectionTableAppendix(
   autoTable(doc as any, {
     startY: topY,
     styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
-    headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+    headStyles: { fillColor: [25, 118, 210], textColor: "#fff", fontStyle: "bold" },
     body: rows.length ? rows : [{ pergunta: "—", opcao: "—", qtde: 0, pct: "0%" }],
     columns: [
       { header: section.title, dataKey: "pergunta" },
@@ -382,11 +366,10 @@ function renderSectionTableAppendix(
     rowPageBreak: "auto",
     didDrawPage: () => {
       const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
-      const sampleTxt = `Respondido: ${answeredAll} • Não respondido: ${notAnsweredAll}`;
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK_SOFT);
       doc.setFontSize(11);
-      doc.text(sampleTxt, marginX, sY + HEADER_GAP - 12);
+      doc.text(`Respondido: ${answeredAll} • Não respondido: ${notAnsweredAll}`, marginX, sY + HEADER_GAP - 12);
       drawFooter(doc, pageW, pageH, marginX);
     },
   });
@@ -394,30 +377,8 @@ function renderSectionTableAppendix(
   return (doc as any).lastAutoTable.finalY;
 }
 
-/* ===================== Respostas detalhadas — Premium ===================== */
+/* ===================== Respostas detalhadas ===================== */
 
-function drawPill(doc: jsPDF, x: number, y: number, text: string) {
-  const padX = 6;
-  const padY = 4;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  const w = doc.getTextWidth(text) + padX * 2;
-  const h = 18;
-  doc.setDrawColor(CARD_EDGE);
-  doc.setFillColor("#f6f9ff");
-  doc.roundedRect(x, y, w, h, 9, 9, "FD");
-  doc.setTextColor(BRAND_BLUE);
-  doc.text(text, x + padX, y + 12);
-  return { width: w, height: h };
-}
-
-function safeText(v: any): string {
-  if (v == null || v === "") return "Não informado";
-  if (typeof v === "boolean") return v ? "Sim" : "Não";
-  return String(v);
-}
-
-/** Cards 2-col para ≤ 20 respostas */
 function renderDetailedAsCards(
   doc: jsPDF,
   answers: Answer[],
@@ -447,14 +408,13 @@ function renderDetailedAsCards(
     const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
     const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
 
-    const baseH =
+    let cardH =
       24 /*title*/ +
       8 /*id line*/ +
-      3 * 28 /*pills*/ +
+      3 * 28 /*3 seções*/ +
       (comment ? 18 : 0) +
       commentH +
       18;
-    let cardH = baseH;
 
     if (y + cardH > pageH - 60) {
       y = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 14;
@@ -464,16 +424,19 @@ function renderDetailedAsCards(
       doc.text("Respostas detalhadas (cartões)", marginX, y - 12);
     }
 
+    // card
     doc.setDrawColor(CARD_EDGE);
-    doc.setFillColor("#ffffff");
+    doc.setFillColor("#fff");
     doc.roundedRect(x, y, colW, cardH, 12, 12, "FD");
 
+    // cabeçalho
     const code = `R-${String(idx + 1).padStart(2, "0")}`;
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(12);
     doc.text(`Resposta ${code}`, x + 14, y + 22);
 
+    // identificação se consentido
     const consent = !!(a.consent_contact || a.consent);
     if (consent) {
       const idLine = [safeText(a.doctor_name), safeText(a.crm), safeText(a.contact)]
@@ -525,7 +488,6 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_rx_tool_value));
     rowY += 28;
 
-    // Comentário (resumo)
     if (commentLines.length) {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
@@ -542,15 +504,12 @@ function renderDetailedAsCards(
 
     rowY += 12;
     const usedH = rowY - y;
-    if (usedH + 10 > cardH) {
-      cardH = usedH + 10;
-    }
+    if (usedH + 10 > cardH) cardH = usedH + 10;
 
     if (col === 1) y += cardH + 12;
   });
 }
 
-/** Tabelas por tema para > 20 respostas */
 function renderDetailedAsTables(
   doc: jsPDF,
   answers: Answer[],
@@ -562,14 +521,13 @@ function renderDetailedAsTables(
 ) {
   type Row = { resp: string; a: string; b: string; c: string };
 
-  const buildRows = (keys: [keyof Answer, keyof Answer, keyof Answer]): Row[] => {
-    return answers.map((a, i) => ({
+  const buildRows = (keys: [keyof Answer, keyof Answer, keyof Answer]): Row[] =>
+    answers.map((a, i) => ({
       resp: `R-${String(i + 1).padStart(2, "0")}`,
       a: safeText(a[keys[0]]),
       b: safeText(a[keys[1]]),
       c: safeText(a[keys[2]]),
     }));
-  };
 
   const sections: Array<{ title: string; rows: Row[]; heads: [string, string, string] }> = [
     {
@@ -596,7 +554,7 @@ function renderDetailedAsTables(
     autoTable(doc as any, {
       startY: idx === 0 ? topY : (doc as any).lastAutoTable.finalY + 26,
       styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
-      headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold" },
+      headStyles: { fillColor: [37, 117, 252], textColor: "#fff", fontStyle: "bold" },
       body: sec.rows,
       columns: [
         { header: sec.title, dataKey: "resp" },
@@ -626,43 +584,6 @@ function renderDetailedAsTables(
   });
 }
 
-/* ===================== Plano de ação (dinâmico) ===================== */
-
-function buildActionPlan(kpi: KPI, answers: Answer[]) {
-  // heurísticas simples baseadas nas distribuições
-  const ns = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
-  const gl = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
-  const rx = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
-
-  const bullets: string[] = [];
-
-  // foco 1
-  if ((parseInt(ns.items.find(i => i.label==="Sim")?.pct || "0") || 0) >= 50) {
-    bullets.push("• **No-show:** piloto com lembretes automáticos + confirmação (SMS/WhatsApp) e overbooking leve nos horários com maior faltante.");
-  }
-  // foco 2
-  if ((parseInt(gl.items.find(i => i.label==="Sim")?.pct || "0") || 0) >= 40) {
-    bullets.push("• **Glosas:** checagem automática TISS/TUSS antes do envio e checklist mínimo para recepção.");
-  }
-  // foco 3
-  if ((parseInt(rx.items.find(i => i.label==="Sim")?.pct || "0") || 0) >= 40) {
-    bullets.push("• **Receitas:** fluxo assistido de emissão/validação de receitas digitais com passo-a-passo para paciente e farmácia.");
-  }
-
-  if (bullets.length === 0) {
-    bullets.push("• Equilíbrio entre temas — sugerido discovery adicional com 3–5 entrevistas para refinar priorização.");
-  }
-
-  // metas curtas, para 30–45 dias
-  const kpis = [
-    `• Reduzir **no-show** em 20–30%.`,
-    `• Diminuir **glosas** em 30–50%.`,
-    `• Cortar **retrabalho** em receitas digitais em 40%.`,
-  ];
-
-  return { bullets, kpis };
-}
-
 /* ===================== Componente ===================== */
 
 export default function ExportPDFButton({ kpi, answers }: Props) {
@@ -680,7 +601,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁGINA 1: Sumário + Resumo + Plano de Ação ========= */
+      /* ========= PÁGINA 1: Sumário + Plano de Ação ========= */
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
@@ -700,17 +621,29 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const summaryTitleH = 16;
       const summaryListH = tocItems.length * LINE;
       const summaryPadBottom = 20;
-      const summaryCardH = TITLE_GAP + summaryTitleH + 8 + summaryListH + summaryPadBottom;
 
-      if (startY + summaryCardH > pageH - 60) {
-        startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-      }
+      // vamos compor 2 colunas dentro do card (sumário + plano)
+      const colGap = 18;
+      const colW = (CARD_W - colGap - PAD_X * 2) / 2;
+      const summaryH = TITLE_GAP + summaryTitleH + 8 + summaryListH + 20;
 
+      const actionLines = [
+        "No-show: lembretes automáticos + confirmação (SMS/WhatsApp) e overbooking leve.",
+        "Glosas: checagem TISS/TUSS antes do envio + checklist mínimo na recepção.",
+        "Receitas digitais: fluxo assistido de emissão/validação para paciente e farmácia.",
+        "Metas (30–45 dias): No-show −20~30%, Glosas −30~50%, Retrabalho −40%.",
+      ];
+      const actionH = TITLE_GAP + 14 + 8 + actionLines.length * LINE + 20;
+
+      const cardH = Math.max(summaryH, actionH);
+
+      // CARD container
       let y = startY;
       doc.setDrawColor(CARD_EDGE);
-      doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, y, CARD_W, summaryCardH, 12, 12, "FD");
+      doc.setFillColor("#fff");
+      doc.roundedRect(marginX, y, CARD_W, cardH, 12, 12, "FD");
 
+      // coluna 1 (Sumário)
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(16);
@@ -722,90 +655,29 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       let listY = y + TITLE_GAP + summaryTitleH + 8;
       tocItems.forEach((label, i) => {
-        doc.text(`${i + 1}. ${label}`, marginX + PAD_X, listY, { maxWidth: CARD_W - PAD_X * 2 });
+        doc.text(`${i + 1}. ${label}`, marginX + PAD_X, listY, { maxWidth: colW - 8 });
         listY += LINE;
       });
 
-      // RESUMO EXECUTIVO
-      const bullets = [
-        `Amostra consolidada: ${kpi.total} respostas.`,
-        `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
-          0
-        )}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
-      ];
-
-      const reTitleH = 14;
-      const bulletsH = (bullets.length + 1) * LINE; // +1 para a 1ª linha do plano
-      const plan = buildActionPlan(kpi, answers);
-
-      // vai ter um card de Resumo e um card de Plano de Ação na mesma página
-      const twoCol = pageW >= 1000;
-      const colW = twoCol ? (CARD_W - 16) / 2 : CARD_W;
-      const colGap = 16;
-
-      // Card 1 — Resumo Executivo
-      let col1Top = y + summaryCardH + 16;
-      if (col1Top + 180 > pageH - 60) col1Top = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-
-      doc.setDrawColor(CARD_EDGE);
-      doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, col1Top, colW, 150, 12, 12, "FD");
+      // coluna 2 (Plano de Ação)
+      const col2X = marginX + PAD_X + colW + colGap;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
-      doc.setFontSize(14);
-      doc.text("Resumo Executivo — principais sinais", marginX + PAD_X, col1Top + TITLE_GAP);
-
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK);
-      doc.setFontSize(12);
-      let by = col1Top + TITLE_GAP + reTitleH + 8;
-      const maxW = colW - PAD_X * 2;
-      bullets.forEach((line) => {
-        doc.circle(marginX + PAD_X, by - 3, 2, "F");
-        doc.text(line, marginX + PAD_X + 10, by, { maxWidth: maxW - 10 });
-        by += LINE;
-      });
-
-      // Card 2 — Plano de Ação
-      const col2X = twoCol ? marginX + colW + colGap : marginX;
-      const col2Top = twoCol ? col1Top : by + 12;
-
-      doc.setDrawColor(CARD_EDGE);
-      doc.setFillColor("#ffffff");
-      doc.roundedRect(col2X, col2Top, colW, 150, 12, 12, "FD");
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(14);
-      doc.text("Plano de Ação sugerido (30–45 dias)", col2X + PAD_X, col2Top + TITLE_GAP);
+      doc.setFontSize(16);
+      doc.text("Plano de Ação (30–45 dias)", col2X, y + TITLE_GAP);
 
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
       doc.setFontSize(12);
 
-      let py = col2Top + TITLE_GAP + reTitleH + 8;
-      const pMaxW = colW - PAD_X * 2;
-
-      plan.bullets.forEach((line) => {
-        const text = line.replace("• ", "");
-        doc.circle(col2X + PAD_X, py - 3, 2, "F");
-        doc.text(text, col2X + PAD_X + 10, py, { maxWidth: pMaxW - 10 });
-        py += LINE;
+      let ay = y + TITLE_GAP + 14 + 8;
+      actionLines.forEach((line) => {
+        doc.circle(col2X, ay - 3, 2, "F");
+        doc.text(line, col2X + 10, ay, { maxWidth: colW - 10 });
+        ay += LINE;
       });
 
-      // metas do plano
-      py += 6;
-      doc.setFont("helvetica", "bold");
-      doc.text("Metas iniciais", col2X + PAD_X, py);
-      py += 10;
-      doc.setFont("helvetica", "normal");
-      plan.kpis.forEach((m) => {
-        doc.circle(col2X + PAD_X, py - 3, 2, "F");
-        doc.text(m.replace("• ", ""), col2X + PAD_X + 10, py, { maxWidth: pMaxW - 10 });
-        py += LINE;
-      });
-
-      /* ========= PÁGINA 2: Visão Geral estilo Dashboard (KPIs + blocos por tema) ========= */
+      /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3) ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const gap = 16;
@@ -824,80 +696,65 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
       drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
 
-      let gridTop = kpiY + kpiCardH + 18;
+      let gridTop = kpiY + kpiCardH + 24;
 
-      // Mesma estrutura do dashboard: blocos por TEMA (2 colunas)
-      const COLS = 2;
-      const COL_GAP = 22;
-      const COL_W = (pageW - marginX * 2 - COL_GAP) / COLS;
+      const nsRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items;
+      const nsSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items;
+      const nsImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]).items;
 
-      const sectionsDash: Array<{ title: string; pairs: Array<{ t: string; items: DistItem[] }> }> = [
-        {
-          title: "No-show",
-          pairs: [
-            { t: "Relevância", dist: dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items },
-            { t: "Sistema que resolve", dist: dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items },
-            { t: "Impacto financeiro mensal", dist: dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]).items },
-          ].map(p => ({ t: `No-show — ${p.t}`, items: p.dist })),
-        },
-        {
-          title: "Glosas",
-          pairs: [
-            { t: "Recorrência", dist: dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items },
-            { t: "Checagem antes do envio", dist: dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items },
-            { t: "Quem sofre mais", dist: dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]).items },
-          ].map(p => ({ t: `Glosas — ${p.t}`, items: p.dist })),
-        },
-        {
-          title: "Receitas Digitais",
-          pairs: [
-            { t: "Geram retrabalho", dist: dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]).items },
-            { t: "Dificuldade dos pacientes", dist: dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]).items },
-            { t: "Valor em ferramenta", dist: dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]).items },
-          ].map(p => ({ t: `Receitas — ${p.t}`, items: p.dist })),
-        },
+      const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items;
+      const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items;
+      const gWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]).items;
+
+      const rxRw = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]).items;
+      const rxDif = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]).items;
+      const rxVal = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]).items;
+
+      const blocks: Array<{ title: string; items: DistItem[] }> = [
+        { title: "No-show — Relevância", items: nsRelev },
+        { title: "No-show — Sistema que resolve", items: nsSys },
+        { title: "No-show — Impacto financeiro mensal", items: nsImpact },
+        { title: "Glosas — Recorrência", items: gRec },
+        { title: "Glosas — Checagem antes do envio", items: gInt },
+        { title: "Glosas — Quem sofre mais", items: gWho },
+        { title: "Receitas — Geram retrabalho", items: rxRw },
+        { title: "Receitas — Dificuldade dos pacientes", items: rxDif },
+        { title: "Receitas — Valor em ferramenta", items: rxVal },
       ];
 
-      let curY = gridTop;
-      for (const sec of sectionsDash) {
-        // título do tema
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(INK);
-        doc.setFontSize(13);
-        doc.text(sec.title, marginX, curY);
-        curY += 10;
+      const COLS = 3;
+      const COL_GAP = 18;
+      const COL_W = (pageW - marginX * 2 - COL_GAP * (COLS - 1)) / COLS;
 
-        // 2 colunas de blocos compactos
-        let colX = marginX;
-        let tallest = 0;
+      let x = marginX;
+      let yCompact = gridTop;
 
-        for (let i = 0; i < sec.pairs.length; i++) {
-          const p = sec.pairs[i];
-          const h = measureBarBlockCompact(p.items.length);
-          if (curY + h > pageH - 60) {
-            // quebra de página mantendo header
-            curY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 2;
-          }
-          drawBarBlockCompact(doc, p.t, p.items, colX, curY, COL_W);
-          tallest = Math.max(tallest, h);
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        const h = measureBarBlockCompact(b.items.length);
 
-          // alterna coluna
-          if (i % COLS === 1) {
-            // terminou linha
-            colX = marginX;
-            curY += Math.max(tallest, 64) + 8;
-            tallest = 0;
-          } else {
-            colX = marginX + COL_W + COL_GAP;
-          }
+        if (yCompact + h > pageH - 60) {
+          startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(INK);
+          doc.setFontSize(14);
+          doc.text("Visão Geral — Distribuições por tema", marginX, startY + 2);
+          yCompact = startY + 14;
+          x = marginX;
         }
-        // espaço entre seções
-        curY += 8;
+
+        drawBarBlockCompact(doc, b.title, b.items, x, yCompact, COL_W);
+
+        const col = i % COLS;
+        if (col === COLS - 1) {
+          x = marginX;
+          yCompact += Math.max(h, 74);
+        } else {
+          x += COL_W + COL_GAP;
+        }
       }
 
-      drawFooter(doc, pageW, pageH, marginX);
-
-      /* ========= RESPOSTAS DETALHADAS — adaptativo ========= */
+      /* ========= DETALHADAS ========= */
       if (answers.length <= 20) {
         renderDetailedAsCards(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
       } else {
@@ -930,7 +787,6 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
           const bullet = `${c.code} — ${c.text}`;
           const lines = doc.splitTextToSize(bullet, maxW);
           if (yC + lines.length * lineH > pageH - 60) {
-            drawFooter(doc, pageW, pageH, marginX);
             doc.addPage();
             const sY2 = drawHeader(doc, pageW, marginX, title, logoDataUrl);
             doc.setFont("helvetica", "bold");
@@ -949,7 +805,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         drawFooter(doc, pageW, pageH, marginX);
       }
 
-      /* ========= IDENTIFICAÇÃO (se autorizado) ========= */
+      /* ========= IDENTIFICAÇÃO (opt-in) ========= */
       const idRows = answers
         .filter((a) => a.consent_contact === true || a.consent === true)
         .map((a, i) => ({
@@ -968,7 +824,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         autoTable(doc as any, {
           startY: topY,
           styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
-          headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
+          headStyles: { fillColor: [25, 118, 210], textColor: "#fff", fontStyle: "bold" },
           body: idRows,
           columns: [
             { header: "Resp.", dataKey: "resp" },
@@ -989,18 +845,22 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
             doc.setFont("helvetica", "normal");
             doc.setTextColor(INK_SOFT);
             doc.setFontSize(11);
-            doc.text("Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.", marginX, sY + 36);
+            doc.text(
+              "Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.",
+              marginX,
+              sY + 36
+            );
             drawFooter(doc, pageW, pageH, marginX);
           },
         });
       }
 
-      /* ========= APÊNDICE (Consolidado por tema) — OPCIONAL ========= */
-      const includeAppendix = false; // deixe true se quiser anexar as tabelas por tema
-      if (includeAppendix) {
+      /* ========= APÊNDICE (Consolidado por tema) quando fizer sentido ========= */
+      const APPENDIX_MIN = 8;
+      if (answers.length >= APPENDIX_MIN) {
         for (const key of ["noshow", "glosas", "receitas"] as SectionKey[]) {
           doc.addPage();
-          renderSectionTableAppendix(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
+          renderSectionTable(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
         }
       }
 
