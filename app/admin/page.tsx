@@ -76,10 +76,6 @@ export default function AdminLogin() {
           </div>
         </form>
       </section>
-
-      <p className="text-xs text-slate-500 mt-6 text-center">
-        Protegido por Supabase Auth (e-mail e senha).
-      </p>
     </div>
   );
 }
