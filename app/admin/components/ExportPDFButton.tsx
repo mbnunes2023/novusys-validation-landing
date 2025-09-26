@@ -213,7 +213,7 @@ function dist(
   return { items, answered, unknownCount: unknown };
 }
 
-/* ======== Compacto (3×3 da página 2) ======== */
+/* ======== Compacto ======== */
 const CROW_H = 14;
 const CROW_GAP = 4;
 
@@ -295,7 +295,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-/* ===================== Consolidado por tema ===================== */
+/* ===================== Consolidado por tema (apêndice opcional) ===================== */
 
 type SectionKey = "noshow" | "glosas" | "receitas";
 const SECTIONS: Record<
@@ -328,7 +328,7 @@ const SECTIONS: Record<
   },
 };
 
-function renderSectionTable(
+function renderSectionTableAppendix(
   doc: jsPDF,
   section: (typeof SECTIONS)[SectionKey],
   answers: Answer[],
@@ -396,7 +396,6 @@ function renderSectionTable(
 
 /* ===================== Respostas detalhadas — Premium ===================== */
 
-/** desenha um "pill" com texto dentro */
 function drawPill(doc: jsPDF, x: number, y: number, text: string) {
   const padX = 6;
   const padY = 4;
@@ -443,17 +442,20 @@ function renderDetailedAsCards(
     const col = idx % 2;
     const x = marginX + col * (colW + gap);
 
-    // medir comentário (resumo)
     const commentRaw = (a.comments || "").toString().trim();
     const comment = commentRaw ? commentRaw : "";
     const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
     const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
 
-    // altura básica do card
-    const baseH = 24 /*title*/ + 8 /*id line*/ + 3 * 28 /*3 blocos pills*/ + (comment ? 18 : 0) + commentH + 18;
+    const baseH =
+      24 /*title*/ +
+      8 /*id line*/ +
+      3 * 28 /*pills*/ +
+      (comment ? 18 : 0) +
+      commentH +
+      18;
     let cardH = baseH;
 
-    // quebra de página?
     if (y + cardH > pageH - 60) {
       y = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 14;
       doc.setFont("helvetica", "bold");
@@ -462,19 +464,16 @@ function renderDetailedAsCards(
       doc.text("Respostas detalhadas (cartões)", marginX, y - 12);
     }
 
-    // card
     doc.setDrawColor(CARD_EDGE);
     doc.setFillColor("#ffffff");
     doc.roundedRect(x, y, colW, cardH, 12, 12, "FD");
 
-    // cabeçalho
     const code = `R-${String(idx + 1).padStart(2, "0")}`;
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(12);
     doc.text(`Resposta ${code}`, x + 14, y + 22);
 
-    // identificação (se consentida)
     const consent = !!(a.consent_contact || a.consent);
     if (consent) {
       const idLine = [safeText(a.doctor_name), safeText(a.crm), safeText(a.contact)]
@@ -488,7 +487,6 @@ function renderDetailedAsCards(
       }
     }
 
-    // blocos
     let rowY = y + (consent ? 50 : 42);
 
     // No-show
@@ -542,7 +540,6 @@ function renderDetailedAsCards(
       rowY += commentH;
     }
 
-    // rodapé do card
     rowY += 12;
     const usedH = rowY - y;
     if (usedH + 10 > cardH) {
@@ -629,36 +626,41 @@ function renderDetailedAsTables(
   });
 }
 
-/* ===================== NOVO: Confiança + Plano (somente adição) ===================== */
-function getConfidencePlan(total: number): { label: string; bullets: string[] } {
-  if (total < 10) {
-    return {
-      label: "Amostra pequena",
-      bullets: [
-        "Ampliar a coleta para ≥ 30 respostas antes de grandes decisões.",
-        "Focar divulgação no ICP (tamanho e especialidade mais relevantes).",
-        "Realizar 3–5 entrevistas qualitativas para validar hipóteses.",
-      ],
-    };
+/* ===================== Plano de ação (dinâmico) ===================== */
+
+function buildActionPlan(kpi: KPI, answers: Answer[]) {
+  // heurísticas simples baseadas nas distribuições
+  const ns = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
+  const gl = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
+  const rx = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
+
+  const bullets: string[] = [];
+
+  // foco 1
+  if ((parseInt(ns.items.find(i => i.label==="Sim")?.pct || "0") || 0) >= 50) {
+    bullets.push("• **No-show:** piloto com lembretes automáticos + confirmação (SMS/WhatsApp) e overbooking leve nos horários com maior faltante.");
   }
-  if (total < 30) {
-    return {
-      label: "Amostra moderada",
-      bullets: [
-        "Iniciar protótipos/pilotos controlados em 1–2 clínicas.",
-        "Medir baseline por 2 semanas (no-show, glosa, tempo de receita).",
-        "Aprimorar coleta para mensurar valor monetário das dores.",
-      ],
-    };
+  // foco 2
+  if ((parseInt(gl.items.find(i => i.label==="Sim")?.pct || "0") || 0) >= 40) {
+    bullets.push("• **Glosas:** checagem automática TISS/TUSS antes do envio e checklist mínimo para recepção.");
   }
-  return {
-    label: "Amostra robusta",
-    bullets: [
-        "Priorizar tema líder e iniciar MVP com metas de ROI.",
-        "Planejar integrações com agenda/faturamento e piloto pago.",
-        "Definir pricing e contrato de valor (SaaS).",
-    ],
-  };
+  // foco 3
+  if ((parseInt(rx.items.find(i => i.label==="Sim")?.pct || "0") || 0) >= 40) {
+    bullets.push("• **Receitas:** fluxo assistido de emissão/validação de receitas digitais com passo-a-passo para paciente e farmácia.");
+  }
+
+  if (bullets.length === 0) {
+    bullets.push("• Equilíbrio entre temas — sugerido discovery adicional com 3–5 entrevistas para refinar priorização.");
+  }
+
+  // metas curtas, para 30–45 dias
+  const kpis = [
+    `• Reduzir **no-show** em 20–30%.`,
+    `• Diminuir **glosas** em 30–50%.`,
+    `• Cortar **retrabalho** em receitas digitais em 40%.`,
+  ];
+
+  return { bullets, kpis };
 }
 
 /* ===================== Componente ===================== */
@@ -678,7 +680,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁGINA 1: Sumário + Resumo Executivo ========= */
+      /* ========= PÁGINA 1: Sumário + Resumo + Plano de Ação ========= */
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
@@ -689,12 +691,11 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       // SUMÁRIO (preto)
       const tocItems = [
-        "Visão Geral (KPIs + distribuições)",
-        "Consolidado por tema",
+        "Visão Geral (KPIs + gráficos por tema)",
         "Respostas detalhadas",
         "Comentários",
         "Identificação (opcional)",
-        "Plano de ação recomendado", // <— adicionado ao sumário
+        "Apêndice (consolidado por tema)",
       ];
       const summaryTitleH = 16;
       const summaryListH = tocItems.length * LINE;
@@ -731,75 +732,80 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
           0
         )}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
-        "Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.",
       ];
 
       const reTitleH = 14;
-      const bulletsH = bullets.length * LINE;
-      const rePadBottom = 24;
-      const reCardH = TITLE_GAP + reTitleH + 8 + bulletsH + rePadBottom;
+      const bulletsH = (bullets.length + 1) * LINE; // +1 para a 1ª linha do plano
+      const plan = buildActionPlan(kpi, answers);
 
-      const gapBetweenCards = 20;
-      let reTop = y + summaryCardH + gapBetweenCards;
+      // vai ter um card de Resumo e um card de Plano de Ação na mesma página
+      const twoCol = pageW >= 1000;
+      const colW = twoCol ? (CARD_W - 16) / 2 : CARD_W;
+      const colGap = 16;
 
-      if (reTop + reCardH > pageH - 60) {
-        reTop = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-      }
+      // Card 1 — Resumo Executivo
+      let col1Top = y + summaryCardH + 16;
+      if (col1Top + 180 > pageH - 60) col1Top = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       doc.setDrawColor(CARD_EDGE);
       doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, reTop, CARD_W, reCardH, 12, 12, "FD");
-
+      doc.roundedRect(marginX, col1Top, colW, 150, 12, 12, "FD");
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
-      doc.text("Resumo Executivo — Principais insights", marginX + PAD_X, reTop + TITLE_GAP);
+      doc.text("Resumo Executivo — principais sinais", marginX + PAD_X, col1Top + TITLE_GAP);
 
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
       doc.setFontSize(12);
-
-      let by = reTop + TITLE_GAP + reTitleH + 8;
-      const maxW = CARD_W - PAD_X * 2;
+      let by = col1Top + TITLE_GAP + reTitleH + 8;
+      const maxW = colW - PAD_X * 2;
       bullets.forEach((line) => {
         doc.circle(marginX + PAD_X, by - 3, 2, "F");
         doc.text(line, marginX + PAD_X + 10, by, { maxWidth: maxW - 10 });
         by += LINE;
       });
 
-      /* ========= (NOVO) CARTÃO: Plano de ação recomendado (ainda na página 1) ========= */
-      const plan = getConfidencePlan(kpi.total);
-      const planTitleH = 14;
-      const planBulletsH = plan.bullets.length * LINE;
-      const planPadBottom = 24;
-      const planCardH = TITLE_GAP + planTitleH + 8 + planBulletsH + planPadBottom;
-
-      let planTop = reTop + reCardH + gapBetweenCards;
-      if (planTop + planCardH > pageH - 60) {
-        planTop = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-      }
+      // Card 2 — Plano de Ação
+      const col2X = twoCol ? marginX + colW + colGap : marginX;
+      const col2Top = twoCol ? col1Top : by + 12;
 
       doc.setDrawColor(CARD_EDGE);
       doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, planTop, CARD_W, planCardH, 12, 12, "FD");
+      doc.roundedRect(col2X, col2Top, colW, 150, 12, 12, "FD");
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
-      doc.text(`Plano de ação recomendado — ${plan.label}`, marginX + PAD_X, planTop + TITLE_GAP);
+      doc.text("Plano de Ação sugerido (30–45 dias)", col2X + PAD_X, col2Top + TITLE_GAP);
 
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
       doc.setFontSize(12);
 
-      let py = planTop + TITLE_GAP + planTitleH + 8;
+      let py = col2Top + TITLE_GAP + reTitleH + 8;
+      const pMaxW = colW - PAD_X * 2;
+
       plan.bullets.forEach((line) => {
-        doc.circle(marginX + PAD_X, py - 3, 2, "F");
-        doc.text(line, marginX + PAD_X + 10, py, { maxWidth: maxW - 10 });
+        const text = line.replace("• ", "");
+        doc.circle(col2X + PAD_X, py - 3, 2, "F");
+        doc.text(text, col2X + PAD_X + 10, py, { maxWidth: pMaxW - 10 });
         py += LINE;
       });
 
-      /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3 compacta) ========= */
+      // metas do plano
+      py += 6;
+      doc.setFont("helvetica", "bold");
+      doc.text("Metas iniciais", col2X + PAD_X, py);
+      py += 10;
+      doc.setFont("helvetica", "normal");
+      plan.kpis.forEach((m) => {
+        doc.circle(col2X + PAD_X, py - 3, 2, "F");
+        doc.text(m.replace("• ", ""), col2X + PAD_X + 10, py, { maxWidth: pMaxW - 10 });
+        py += LINE;
+      });
+
+      /* ========= PÁGINA 2: Visão Geral estilo Dashboard (KPIs + blocos por tema) ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const gap = 16;
@@ -818,73 +824,80 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
       drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
 
-      let gridTop = kpiY + kpiCardH + 24;
+      let gridTop = kpiY + kpiCardH + 18;
 
-      const nsRelev  = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items;
-      const nsSys    = dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items;
-      const nsImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]).items;
+      // Mesma estrutura do dashboard: blocos por TEMA (2 colunas)
+      const COLS = 2;
+      const COL_GAP = 22;
+      const COL_W = (pageW - marginX * 2 - COL_GAP) / COLS;
 
-      const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items;
-      const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items;
-      const gWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]).items;
-
-      const rxRw  = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]).items;
-      const rxDif = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]).items;
-      const rxVal = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]).items;
-
-      const blocks: Array<{ title: string; items: DistItem[] }> = [
-        { title: "No-show — Relevância",                 items: nsRelev },
-        { title: "No-show — Sistema que resolve",        items: nsSys },
-        { title: "No-show — Impacto financeiro mensal",  items: nsImpact },
-        { title: "Glosas — Recorrência",                 items: gRec },
-        { title: "Glosas — Checagem antes do envio",     items: gInt },
-        { title: "Glosas — Quem sofre mais",             items: gWho },
-        { title: "Receitas — Geram retrabalho",          items: rxRw },
-        { title: "Receitas — Dificuldade dos pacientes", items: rxDif },
-        { title: "Receitas — Valor em ferramenta",       items: rxVal },
+      const sectionsDash: Array<{ title: string; pairs: Array<{ t: string; items: DistItem[] }> }> = [
+        {
+          title: "No-show",
+          pairs: [
+            { t: "Relevância", dist: dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items },
+            { t: "Sistema que resolve", dist: dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items },
+            { t: "Impacto financeiro mensal", dist: dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]).items },
+          ].map(p => ({ t: `No-show — ${p.t}`, items: p.dist })),
+        },
+        {
+          title: "Glosas",
+          pairs: [
+            { t: "Recorrência", dist: dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items },
+            { t: "Checagem antes do envio", dist: dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items },
+            { t: "Quem sofre mais", dist: dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]).items },
+          ].map(p => ({ t: `Glosas — ${p.t}`, items: p.dist })),
+        },
+        {
+          title: "Receitas Digitais",
+          pairs: [
+            { t: "Geram retrabalho", dist: dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]).items },
+            { t: "Dificuldade dos pacientes", dist: dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]).items },
+            { t: "Valor em ferramenta", dist: dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]).items },
+          ].map(p => ({ t: `Receitas — ${p.t}`, items: p.dist })),
+        },
       ];
 
-      const COLS = 3;
-      const COL_GAP = 18;
-      const COL_W = (pageW - marginX * 2 - COL_GAP * (COLS - 1)) / COLS;
+      let curY = gridTop;
+      for (const sec of sectionsDash) {
+        // título do tema
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(13);
+        doc.text(sec.title, marginX, curY);
+        curY += 10;
 
-      let x = marginX;
-      let yCompact = gridTop;
+        // 2 colunas de blocos compactos
+        let colX = marginX;
+        let tallest = 0;
 
-      for (let i = 0; i < blocks.length; i++) {
-        const b = blocks[i];
-        const h = measureBarBlockCompact(b.items.length);
+        for (let i = 0; i < sec.pairs.length; i++) {
+          const p = sec.pairs[i];
+          const h = measureBarBlockCompact(p.items.length);
+          if (curY + h > pageH - 60) {
+            // quebra de página mantendo header
+            curY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 2;
+          }
+          drawBarBlockCompact(doc, p.t, p.items, colX, curY, COL_W);
+          tallest = Math.max(tallest, h);
 
-        if (yCompact + h > pageH - 60) {
-          startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(INK);
-          doc.setFontSize(14);
-          doc.text("Visão Geral — Distribuições compactas", marginX, startY + 2);
-          yCompact = startY + 14;
-          x = marginX;
+          // alterna coluna
+          if (i % COLS === 1) {
+            // terminou linha
+            colX = marginX;
+            curY += Math.max(tallest, 64) + 8;
+            tallest = 0;
+          } else {
+            colX = marginX + COL_W + COL_GAP;
+          }
         }
-
-        drawBarBlockCompact(doc, b.title, b.items, x, yCompact, COL_W);
-
-        const col = i % COLS;
-        if (col === COLS - 1) {
-          x = marginX;
-          yCompact += Math.max(h, 74);
-        } else {
-          x += COL_W + COL_GAP;
-        }
+        // espaço entre seções
+        curY += 8;
       }
 
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁGINAS 3–5: Consolidado por TEMA ========= */
-      for (const key of ["noshow", "glosas", "receitas"] as SectionKey[]) {
-        doc.addPage();
-        renderSectionTable(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
-      }
-
-      /* ========= RESPOSTAS DETALHADAS — modo adaptativo ========= */
+      /* ========= RESPOSTAS DETALHADAS — adaptativo ========= */
       if (answers.length <= 20) {
         renderDetailedAsCards(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
       } else {
@@ -893,10 +906,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       /* ========= COMENTÁRIOS ========= */
       const comments: Array<{ code: string; text: string }> = answers
-        .map((a, i) => ({
-          code: `R-${String(i + 1).padStart(2, "0")}`,
-          text: (a.comments || "").toString().trim(),
-        }))
+        .map((a, i) => ({ code: `R-${String(i + 1).padStart(2, "0")}`, text: (a.comments || "").toString().trim() }))
         .filter((c) => c.text.length > 0);
 
       if (comments.length) {
@@ -983,6 +993,15 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
             drawFooter(doc, pageW, pageH, marginX);
           },
         });
+      }
+
+      /* ========= APÊNDICE (Consolidado por tema) — OPCIONAL ========= */
+      const includeAppendix = false; // deixe true se quiser anexar as tabelas por tema
+      if (includeAppendix) {
+        for (const key of ["noshow", "glosas", "receitas"] as SectionKey[]) {
+          doc.addPage();
+          renderSectionTableAppendix(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
+        }
       }
 
       // salvar
