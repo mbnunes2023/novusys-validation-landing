@@ -1,3 +1,4 @@
+// app/admin/components/ExportPDFButton.tsx
 "use client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -16,7 +17,7 @@ type KPI = {
 
 type Answer = Record<string, any>;
 
-type ExportPDFProps = {
+type Props = {
   kpi: KPI;
   summaryRows: Array<Record<string, number | string>>;
   answers: Answer[];
@@ -28,14 +29,11 @@ type ExportPDFProps = {
 };
 
 const BRAND_BLUE = "#1976d2";
-const BRAND_GRAD_LEFT = "#1976d2";
-const BRAND_GRAD_RIGHT = "#2575fc";
 const INK = "#0f172a";
 const INK_SOFT = "#64748b";
 const CARD_EDGE = "#e9edf7";
 const LOGO_SRC = "/logo.png";
 
-/** Carrega imagem compatível com Vercel */
 function loadImage(src: string): Promise<{ img: HTMLImageElement; ratio: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -50,7 +48,6 @@ function loadImage(src: string): Promise<{ img: HTMLImageElement; ratio: number 
   });
 }
 
-/** Converte um nó (gráfico) para PNG */
 async function nodeToPNG(el?: HTMLElement | null, width = 1000): Promise<string | null> {
   if (!el) return null;
   try {
@@ -65,7 +62,6 @@ async function nodeToPNG(el?: HTMLElement | null, width = 1000): Promise<string 
   }
 }
 
-/** Data/hora pt-BR sem libs externas */
 function formatNow(): string {
   const d = new Date();
   return new Intl.DateTimeFormat("pt-BR", {
@@ -74,7 +70,7 @@ function formatNow(): string {
   }).format(d);
 }
 
-export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }: ExportPDFProps) {
+export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }: Props) {
   const [loading, setLoading] = useState(false);
 
   const onExport = useCallback(async () => {
@@ -90,7 +86,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       doc.setFillColor(BRAND_BLUE);
       doc.rect(0, 0, pageW, 8, "F");
 
-      // Cabeçalho com logo proporcional
+      // Cabeçalho (cartão com logo proporcional)
       const headerH = 84;
       doc.setFillColor("#ffffff");
       doc.setDrawColor(CARD_EDGE);
@@ -267,13 +263,12 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       const footerW = doc.getTextWidth(footer);
       doc.text(footer, pageW - marginX - footerW, pageH - 16);
 
-      // Nome do arquivo
+      // Salvar
       const pad = (n: number) => String(n).padStart(2, "0");
       const d = new Date();
-      const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(
-        d.getHours()
-      )}${pad(d.getMinutes())}.pdf`;
-
+      const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(
+        d.getDate()
+      )}-${pad(d.getHours())}${pad(d.getMinutes())}.pdf`;
       doc.save(filename);
     } catch (e) {
       console.error(e);
@@ -290,7 +285,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       onClick={onExport}
       disabled={loading}
       style={{
-        backgroundImage: `linear-gradient(135deg, ${BRAND_GRAD_LEFT}, ${BRAND_GRAD_RIGHT})`,
+        backgroundImage: "linear-gradient(135deg, #1976d2 0%, #6a11cb 50%, #2575fc 100%)",
       }}
     >
       {loading ? "Gerando..." : "Exportar PDF"}
