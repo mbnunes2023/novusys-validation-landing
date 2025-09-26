@@ -473,6 +473,13 @@ export default function ExportPDFButton({
           },
         });
       }
+
+      // === SALVAR O PDF ===
+      const fileName = `Relatorio_NovuSys_${new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace(/[:T]/g, "-")}.pdf`;
+      doc.save(fileName);
     } finally {
       setLoading(false);
     }
