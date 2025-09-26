@@ -1,4 +1,3 @@
-// app/admin/components/ExportPDFButton.tsx
 "use client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,25 +28,13 @@ type Props = {
 };
 
 const BRAND_BLUE = "#1976d2";
+const BRAND_GRAD_LEFT = "#1976d2";
+const BRAND_GRAD_RIGHT = "#2575fc";
 const INK = "#0f172a";
 const INK_SOFT = "#64748b";
 const CARD_EDGE = "#e9edf7";
-const LOGO_SRC = "/logo.png";
 
-function loadImage(src: string): Promise<{ img: HTMLImageElement; ratio: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () =>
-      resolve({
-        img,
-        ratio: (img.naturalWidth || 1) / (img.naturalHeight || 1),
-      });
-    img.onerror = reject;
-    img.src = src;
-  });
-}
-
+/** Converte nó (gráfico) em PNG com tolerância a erro */
 async function nodeToPNG(el?: HTMLElement | null, width = 1000): Promise<string | null> {
   if (!el) return null;
   try {
@@ -58,16 +45,36 @@ async function nodeToPNG(el?: HTMLElement | null, width = 1000): Promise<string 
     });
     return dataUrl;
   } catch {
-    return null;
+    return null; // sem estourar a geração
   }
 }
 
+/** Data/hora pt-BR sem libs externas */
 function formatNow(): string {
   const d = new Date();
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
   }).format(d);
+}
+
+/** Carrega /logo.png como dataURL (evita CORS no Vercel) */
+async function loadLogoDataURL(): Promise<{ dataUrl: string; ratio: number } | null> {
+  try {
+    const res = await fetch("/logo.png", { cache: "no-store" });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const dataUrl = await new Promise<string>((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.readAsDataURL(blob);
+    });
+
+    // tenta inferir proporção (fallback 1:1)
+    return { dataUrl, ratio: 1 };
+  } catch {
+    return null;
+  }
 }
 
 export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }: Props) {
@@ -86,20 +93,29 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       doc.setFillColor(BRAND_BLUE);
       doc.rect(0, 0, pageW, 8, "F");
 
-      // Cabeçalho (cartão com logo proporcional)
+      // Cabeçalho
       const headerH = 84;
       doc.setFillColor("#ffffff");
       doc.setDrawColor(CARD_EDGE);
       doc.setLineWidth(1);
       doc.roundedRect(marginX, 20, pageW - marginX * 2, headerH, 10, 10, "FD");
 
-      const { img: logo, ratio } = await loadImage(LOGO_SRC);
+      // Logo via dataURL (sem CORS)
+      const logoInfo = await loadLogoDataURL();
       const logoH = 40;
-      const logoW = Math.round(logoH * ratio);
+      const logoW = 40; // mantém quadrado para não “achatar” no PDF
       const logoX = marginX + 16;
       const logoY = 20 + (headerH - logoH) / 2;
-      doc.addImage(logo, "PNG", logoX, logoY, logoW, logoH);
 
+      if (logoInfo?.dataUrl) {
+        try {
+          doc.addImage(logoInfo.dataUrl, "PNG", logoX, logoY, logoW, logoH, undefined, "FAST");
+        } catch {
+          // ignora erro do logo para não travar
+        }
+      }
+
+      // Título + data
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(20);
@@ -134,7 +150,11 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       };
 
       drawKpiCard(kpiStartX, "Total de respostas", `${kpi.total}`);
-      drawKpiCard(kpiStartX + kpiCardW + kpiGap, "% que consideram no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      drawKpiCard(
+        kpiStartX + kpiCardW + kpiGap,
+        "% que consideram no-show relevante",
+        `${kpi.noshowYesPct.toFixed(0)}%`
+      );
       drawKpiCard(
         kpiStartX + 2 * (kpiCardW + kpiGap),
         "% que relatam glosas recorrentes",
@@ -143,7 +163,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
 
       cursorY += kpiCardH + 22;
 
-      // Gráfico 1
+      // ----- Gráfico 1
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
@@ -153,7 +173,13 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       const g1 = await nodeToPNG(chartRefs.noshowRef.current);
       const chartH = 220;
       if (g1) {
-        doc.addImage(g1, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
+        try {
+          doc.addImage(g1, "PNG", marginX, cursorY, pageW - marginX * 2, chartH, undefined, "FAST");
+        } catch {
+          doc.setDrawColor(CARD_EDGE);
+          doc.setLineWidth(1);
+          doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
+        }
       } else {
         doc.setDrawColor(CARD_EDGE);
         doc.setLineWidth(1);
@@ -161,7 +187,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       }
       cursorY += chartH + 26;
 
-      // Gráfico 2
+      // ----- Gráfico 2
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
@@ -170,7 +196,13 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
 
       const g2 = await nodeToPNG(chartRefs.glosaRef.current);
       if (g2) {
-        doc.addImage(g2, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
+        try {
+          doc.addImage(g2, "PNG", marginX, cursorY, pageW - marginX * 2, chartH, undefined, "FAST");
+        } catch {
+          doc.setDrawColor(CARD_EDGE);
+          doc.setLineWidth(1);
+          doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
+        }
       } else {
         doc.setDrawColor(CARD_EDGE);
         doc.setLineWidth(1);
@@ -184,7 +216,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         cursorY = marginX;
       }
 
-      // Tabela resumo
+      // ----- Tabela resumo
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
@@ -213,7 +245,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
           lineColor: CARD_EDGE,
         },
         headStyles: {
-          fillColor: [25, 118, 210],
+          fillColor: [25, 118, 210], // BRAND_BLUE
           textColor: "#ffffff",
           fontStyle: "bold",
         },
@@ -224,35 +256,51 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         theme: "grid",
       });
 
-      // Detalhes
+      // ----- Detalhes
       doc.addPage();
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
       doc.text("Respostas detalhadas (sem identificação sensível)", marginX, marginX);
 
-      const firstRow = answers[0] || {};
-      const detailCols = Object.keys(firstRow).map((k) => ({ header: k, dataKey: k }));
+      if (answers.length === 0) {
+        autoTable(doc as any, {
+          startY: marginX + 10,
+          body: [{ info: "Nenhuma resposta até o momento." }],
+          columns: [{ header: "Informação", dataKey: "info" }],
+          styles: { font: "helvetica", fontSize: 10, textColor: INK },
+          headStyles: {
+            fillColor: [37, 117, 252],
+            textColor: "#ffffff",
+            fontStyle: "bold",
+          },
+          theme: "grid",
+          margin: { left: marginX, right: marginX },
+        });
+      } else {
+        const firstRow = answers[0] || {};
+        const detailCols = Object.keys(firstRow).map((k) => ({ header: k, dataKey: k }));
 
-      autoTable(doc as any, {
-        startY: marginX + 10,
-        styles: {
-          font: "helvetica",
-          fontSize: 9,
-          textColor: INK,
-          cellPadding: 5,
-          lineColor: CARD_EDGE,
-        },
-        headStyles: {
-          fillColor: [37, 117, 252],
-          textColor: "#ffffff",
-          fontStyle: "bold",
-        },
-        body: answers,
-        columns: detailCols,
-        margin: { left: marginX, right: marginX },
-        theme: "grid",
-      });
+        autoTable(doc as any, {
+          startY: marginX + 10,
+          styles: {
+            font: "helvetica",
+            fontSize: 9,
+            textColor: INK,
+            cellPadding: 5,
+            lineColor: CARD_EDGE,
+          },
+          headStyles: {
+            fillColor: [37, 117, 252],
+            textColor: "#ffffff",
+            fontStyle: "bold",
+          },
+          body: answers,
+          columns: detailCols.length ? detailCols : [{ header: "Dados", dataKey: "dados" }],
+          theme: "grid",
+          margin: { left: marginX, right: marginX },
+        });
+      }
 
       // Rodapé
       const year = new Date().getFullYear();
@@ -263,12 +311,13 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       const footerW = doc.getTextWidth(footer);
       doc.text(footer, pageW - marginX - footerW, pageH - 16);
 
-      // Salvar
+      // Nome do arquivo
       const pad = (n: number) => String(n).padStart(2, "0");
       const d = new Date();
-      const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(
-        d.getDate()
-      )}-${pad(d.getHours())}${pad(d.getMinutes())}.pdf`;
+      const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(
+        d.getHours()
+      )}${pad(d.getMinutes())}.pdf`;
+
       doc.save(filename);
     } catch (e) {
       console.error(e);
@@ -285,7 +334,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       onClick={onExport}
       disabled={loading}
       style={{
-        backgroundImage: "linear-gradient(135deg, #1976d2 0%, #6a11cb 50%, #2575fc 100%)",
+        backgroundImage: `linear-gradient(135deg, ${BRAND_GRAD_LEFT}, ${BRAND_GRAD_RIGHT})`,
       }}
     >
       {loading ? "Gerando..." : "Exportar PDF"}
