@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../lib/supabaseClient"; // <- caminho correto
+import { supabase } from "@/lib/supabaseClient";// <- caminho correto
 import ExportPDFButton from "../components/ExportPDFButton";
 
 type Answer = {
