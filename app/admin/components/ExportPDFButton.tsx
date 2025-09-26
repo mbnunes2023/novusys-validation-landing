@@ -199,15 +199,7 @@ function drawBarBlock(
     const pct = parseInt(it.pct) || 0;
     const w = (pct / maxPct) * (barW - 10);
     doc.setFillColor(BRAND_BLUE);
-    doc.roundedRect(
-      x + labelW + 2,
-      rowY + 2,
-      Math.max(w, 2),
-      ROW_H - 4,
-      5,
-      5,
-      "F"
-    );
+    doc.roundedRect(x + labelW + 2, rowY + 2, Math.max(w, 2), ROW_H - 4, 5, 5, "F");
   });
 
   return y + items.length * (ROW_H + ROW_GAP);
@@ -277,15 +269,7 @@ export default function ExportPDFButton({
       doc.text("Visão Geral", marginX, y + 4);
       y += titleH;
 
-      drawKpiCard(
-        doc,
-        marginX + 0 * (cardW + gap),
-        y,
-        cardW,
-        cardH,
-        "Total de respostas",
-        `${kpi.total}`
-      );
+      drawKpiCard(doc, marginX + 0 * (cardW + gap), y, cardW, cardH, "Total de respostas", `${kpi.total}`);
       drawKpiCard(
         doc,
         marginX + 1 * (cardW + gap),
@@ -317,11 +301,7 @@ export default function ExportPDFButton({
       /* ========= PÁG. 2 — No-show ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH });
 
-      const noShowRelev = dist(answers, "q_noshow_relevance", [
-        "Sim",
-        "Não",
-        "Parcialmente",
-      ]);
+      const noShowRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
       const noShowSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]);
       const noShowImpact = dist(answers, "q_noshow_financial_impact", [
         "Baixo impacto",
@@ -330,9 +310,7 @@ export default function ExportPDFButton({
       ]);
 
       const leftH =
-        measureBarBlock(noShowRelev.length) +
-        18 +
-        measureBarBlock(noShowSys.length);
+        measureBarBlock(noShowRelev.length) + 18 + measureBarBlock(noShowSys.length);
       const rightH = measureBarBlock(noShowImpact.length);
       const gridH = Math.max(leftH, rightH);
 
@@ -346,69 +324,41 @@ export default function ExportPDFButton({
       let col1Y = y;
       col1Y = drawBarBlock(doc, "Relevância", noShowRelev, col1X, col1Y, colW);
       col1Y += 18;
-      col1Y = drawBarBlock(
-        doc,
-        "Possui sistema que resolve",
-        noShowSys,
-        col1X,
-        col1Y,
-        colW
-      );
+      col1Y = drawBarBlock(doc, "Possui sistema que resolve", noShowSys, col1X, col1Y, colW);
 
       let col2Y = y;
-      col2Y = drawBarBlock(
-        doc,
-        "Impacto financeiro mensal",
-        noShowImpact,
-        col2X,
-        col2Y,
-        colW
-      );
+      col2Y = drawBarBlock(doc, "Impacto financeiro mensal", noShowImpact, col2X, col2Y, colW);
 
       drawFooter(doc, pageW, pageH, marginX);
 
       /* ========= PÁG. 3 — Glosas ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH });
 
-      const glosaRec = dist(answers, "q_glosa_is_problem", [
-        "Sim",
-        "Não",
-        "Às vezes",
-      ]);
-      const glosaInterest = dist(answers, "q_glosa_interest", [
-        "Sim",
-        "Não",
-        "Talvez",
-      ]);
-      const glosaWho = dist(answers, "q_glosa_who_suffers", [
-        "Médico",
-        "Administrativo",
-        "Ambos",
-      ]);
+      const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
+      const glosaInterest = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]);
+      const glosaWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]);
 
       const gLeftH =
-        measureBarBlock(glosaRec.length) +
-        18 +
-        measureBarBlock(glosaInterest.length);
+        measureBarBlock(glosaRec.length) + 18 + measureBarBlock(glosaInterest.length);
       const gRightH = measureBarBlock(glosaWho.length);
       const gGridH = Math.max(gLeftH, gRightH);
 
       y = centeredStartY(startY, pageH, gGridH);
 
-      col1Y = y;
-      col1Y = drawBarBlock(doc, "Glosas recorrentes", glosaRec, col1X, col1Y, colW);
-      col1Y += 18;
-      col1Y = drawBarBlock(
+      let col1Y_glosa = y;
+      col1Y_glosa = drawBarBlock(doc, "Glosas recorrentes", glosaRec, col1X, col1Y_glosa, colW);
+      col1Y_glosa += 18;
+      col1Y_glosa = drawBarBlock(
         doc,
         "Interesse em checagem antes do envio",
         glosaInterest,
         col1X,
-        col1Y,
+        col1Y_glosa,
         colW
       );
 
-      col2Y = y;
-      col2Y = drawBarBlock(doc, "Quem sofre mais", glosaWho, col2X, col2Y, colW);
+      let col2Y_glosa = y;
+      col2Y_glosa = drawBarBlock(doc, "Quem sofre mais", glosaWho, col2X, col2Y_glosa, colW);
 
       drawFooter(doc, pageW, pageH, marginX);
 
@@ -416,48 +366,22 @@ export default function ExportPDFButton({
       startY = newPage(doc, { title, marginX, pageW, pageH });
 
       const rxRework = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
-      const rxDiff = dist(answers, "q_rx_elderly_difficulty", [
-        "Sim",
-        "Não",
-        "Em parte",
-      ]);
+      const rxDiff = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]);
       const rxValue = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]);
 
-      const rLeftH =
-        measureBarBlock(rxRework.length) + 18 + measureBarBlock(rxDiff.length);
+      const rLeftH = measureBarBlock(rxRework.length) + 18 + measureBarBlock(rxDiff.length);
       const rRightH = measureBarBlock(rxValue.length);
       const rGridH = Math.max(rLeftH, rRightH);
 
       y = centeredStartY(startY, pageH, rGridH);
 
-      col1Y = y;
-      col1Y = drawBarBlock(
-        doc,
-        "Receitas geram retrabalho",
-        rxRework,
-        col1X,
-        col1Y,
-        colW
-      );
-      col1Y += 18;
-      col1Y = drawBarBlock(
-        doc,
-        "Pacientes têm dificuldade",
-        rxDiff,
-        col1X,
-        col1Y,
-        colW
-      );
+      let col1Y_rx = y;
+      col1Y_rx = drawBarBlock(doc, "Receitas geram retrabalho", rxRework, col1X, col1Y_rx, colW);
+      col1Y_rx += 18;
+      col1Y_rx = drawBarBlock(doc, "Pacientes têm dificuldade", rxDiff, col1X, col1Y_rx, colW);
 
-      col2Y = y;
-      col2Y = drawBarBlock(
-        doc,
-        "Valor em ferramenta de apoio",
-        rxValue,
-        col2X,
-        col2Y,
-        colW
-      );
+      let col2Y_rx = y;
+      col2Y_rx = drawBarBlock(doc, "Valor em ferramenta de apoio", rxValue, col2X, col2Y_rx, colW);
 
       drawFooter(doc, pageW, pageH, marginX);
 
@@ -466,6 +390,14 @@ export default function ExportPDFButton({
       const HEADER_GAP = 28; // aumente/diminua se quiser mais/menos espaço
       // 14 (offset) + 70 (altura do header card) + 12 (respiro) + HEADER_GAP
       const tableTopMargin = 14 + 70 + 12 + HEADER_GAP;
+
+      // --- ADIÇÃO: colunas dos detalhes, derivadas das chaves de `answers`
+      const detailCols =
+        answers && answers.length
+          ? Array.from(new Set(answers.flatMap((a) => Object.keys(a ?? {})))).map(
+              (k) => ({ header: k, dataKey: k })
+            )
+          : [];
 
       doc.addPage();
       autoTable(doc as any, {
@@ -502,11 +434,7 @@ export default function ExportPDFButton({
           doc.setTextColor(INK);
           doc.setFontSize(14);
           // empurra o título para baixo usando o mesmo HEADER_GAP
-          doc.text(
-            "Resumo consolidado por pergunta",
-            marginX,
-            sY + HEADER_GAP - 10
-          );
+          doc.text("Resumo consolidado por pergunta", marginX, sY + HEADER_GAP - 10);
           drawFooter(doc, pageW, pageH, marginX);
         },
       });
