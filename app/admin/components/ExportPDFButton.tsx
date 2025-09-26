@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useState, useCallback } from "react";
+import type React from "react"; // <- para os tipos de RefObject
 import jsPDF, { jsPDFOptions } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -17,10 +18,16 @@ type KPI = {
 
 type Answer = Record<string, any>;
 
+// <-- ADIÇÃO: chartRefs fica opcional e é ignorado no código
 type Props = {
   kpi: KPI;
   summaryRows: Array<Record<string, number | string>>;
   answers: Answer[];
+  chartRefs?: {
+    noshowRef: React.RefObject<HTMLDivElement>;
+    glosaRef: React.RefObject<HTMLDivElement>;
+    rxRef: React.RefObject<HTMLDivElement>;
+  };
 };
 
 /* ===================== Paleta / branding ===================== */
@@ -73,7 +80,7 @@ function drawHeader(doc: jsPDF, pageW: number, marginX: number, title: string) {
   doc.setLineWidth(1);
   doc.roundedRect(marginX, 14, pageW - marginX * 2, headerH, 10, 10, "FD");
 
-  // “Logo” tipográfico (estável)
+  // “Logo” tipográfico
   doc.setFont("helvetica", "bold");
   doc.setTextColor(BRAND_BLUE);
   doc.setFontSize(22);
@@ -151,8 +158,7 @@ const ROW_GAP = 6;
 
 /** mede a altura de um bloco de barras dado o nº de linhas */
 function measureBarBlock(lines: number) {
-  // título (8) + cada linha (ROW_H + ROW_GAP)
-  return 8 + lines * (ROW_H + ROW_GAP);
+  return 8 + lines * (ROW_H + ROW_GAP); // título(8) + linhas
 }
 
 function drawBarBlock(
@@ -163,14 +169,13 @@ function drawBarBlock(
   y: number,
   width: number
 ) {
-  // título da seção
+  // título
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(13);
   doc.text(title, x, y);
   y += 8;
 
-  // container
   const labelW = width * 0.35;
   const barW = width * 0.65;
   const maxPct = Math.max(...items.map((i) => parseInt(i.pct) || 0), 1);
@@ -224,13 +229,17 @@ function dist(
 
 /* ===================== Botão ===================== */
 
-export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
+export default function ExportPDFButton({
+  kpi,
+  summaryRows,
+  answers,
+  chartRefs, // <- mantido apenas para compatibilidade; não é usado
+}: Props) {
   const [loading, setLoading] = useState(false);
 
   const onExport = useCallback(async () => {
     setLoading(true);
     try {
-      // PDF paisagem
       const options: jsPDFOptions = {
         unit: "pt",
         format: "a4",
@@ -250,18 +259,16 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       const cardW = (pageW - marginX * 2 - gap * 3) / 4;
       const cardH = 78;
 
-      const titleH = 14; // “Visão Geral”
-      const blockH = titleH + cardH; // altura total do bloco da página
+      const titleH = 14;
+      const blockH = titleH + cardH;
       let y = centeredStartY(startY, pageH, blockH);
 
-      // Título
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
       doc.text("Visão Geral", marginX, y + 4);
       y += titleH;
 
-      // Cards
       drawKpiCard(doc, marginX + 0 * (cardW + gap), y, cardW, cardH, "Total de respostas", `${kpi.total}`);
       drawKpiCard(
         doc,
@@ -291,10 +298,9 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
         `${kpi.rxReworkPct.toFixed(0)}%`
       );
 
-      /* ========= PÁG. 2 — No-show (centralizado) ========= */
+      /* ========= PÁG. 2 — No-show ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH });
 
-      // medir alturas das colunas
       const noShowRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
       const noShowSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]);
       const noShowImpact = dist(answers, "q_noshow_financial_impact", [
@@ -325,7 +331,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
 
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 3 — Glosas (centralizado) ========= */
+      /* ========= PÁG. 3 — Glosas ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH });
 
       const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
@@ -356,7 +362,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
 
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. 4 — Receitas Digitais (centralizado) ========= */
+      /* ========= PÁG. 4 — Receitas Digitais ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH });
 
       const rxRework = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
@@ -381,7 +387,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       drawFooter(doc, pageW, pageH, marginX);
 
       /* ========= PÁG. 5 — Resumo ========= */
-      const tableTopMargin = 14 + 70 + 12 + 14; // header + respiro
+      const tableTopMargin = 14 + 70 + 12 + 14;
       doc.addPage();
       autoTable(doc as any, {
         styles: {
@@ -454,7 +460,6 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
         });
       }
 
-      // Salvar
       const pad = (n: number) => String(n).padStart(2, "0");
       const d = new Date();
       const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(
@@ -467,7 +472,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [kpi, summaryRows, answers]);
+  }, [kpi, summaryRows, answers, chartRefs]);
 
   return (
     <button
