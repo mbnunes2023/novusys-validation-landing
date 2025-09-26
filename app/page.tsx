@@ -87,7 +87,7 @@ export default function Page() {
     consent: false,
   });
 
-  /* Mantido para uso futuro. Não mostramos gráfico neste fluxo. */
+  /* Mantido para uso futuro (não mostramos gráfico no obrigado) */
   const [stats, setStats] = useState<{ name: string; value: number }[]>([]);
   useEffect(() => {
     const fetchStats = async () => {
@@ -113,15 +113,7 @@ export default function Page() {
     if (submitted) fetchStats();
   }, [submitted]);
 
-  /* Esconde/mostra a brand-bar conforme a tela de obrigado */
-  useEffect(() => {
-    if (submitted) {
-      document.body.classList.add("hide-brand-bar");
-    } else {
-      document.body.classList.remove("hide-brand-bar");
-    }
-    return () => document.body.classList.remove("hide-brand-bar");
-  }, [submitted]);
+  /* <<< Removido: não escondemos mais o topo na tela de obrigado >>> */
 
   const canSubmit = useMemo(() => {
     return (
@@ -201,19 +193,25 @@ export default function Page() {
     </div>
   );
 
-  /* ========= TELA DE AGRADECIMENTO — CARD PREMIUM ========= */
+  /* ========= TELA DE AGRADECIMENTO — sem logo no card, título com gradiente ========= */
   if (submitted) {
     return (
       <div className="min-h-screen bg-[var(--page-bg)] flex items-center justify-center px-6 py-12">
         <div className="card w-full max-w-2xl text-center">
-          <img
-            src="/logo.png"
-            alt="NovuSys"
-            className="mx-auto w-24 h-24 rounded-xl shadow-sm"
-          />
-          <h1 className="mt-4 text-3xl md:text-4xl font-extrabold">
-            Obrigado pela resposta!
+          {/* Sem logo aqui — usamos apenas o logo grande do topo */}
+          <h1 className="text-3xl md:text-4xl font-extrabold mt-2">
+            <span
+              style={{
+                background: brand.gradient,
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                color: "transparent",
+              }}
+            >
+              Obrigado pela resposta!
+            </span>
           </h1>
+
           <p className="mt-2 text-slate-600">
             Sua contribuição ajuda a priorizar um MVP útil para clínicas e consultórios.
           </p>
