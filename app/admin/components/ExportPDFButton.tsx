@@ -16,7 +16,7 @@ type KPI = {
 
 type Answer = Record<string, any>;
 
-type Props = {
+type ExportPDFProps = {
   kpi: KPI;
   summaryRows: Array<Record<string, number | string>>;
   answers: Answer[];
@@ -33,11 +33,9 @@ const BRAND_GRAD_RIGHT = "#2575fc";
 const INK = "#0f172a";
 const INK_SOFT = "#64748b";
 const CARD_EDGE = "#e9edf7";
-
-/** Use seu PNG/SVG com fundo transparente; mantenha o mesmo que aparece no topo do site */
 const LOGO_SRC = "/logo.png";
 
-/** Carrega imagem sem usar decode() (mais compatível no build) */
+/** Carrega imagem compatível com Vercel */
 function loadImage(src: string): Promise<{ img: HTMLImageElement; ratio: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -67,7 +65,7 @@ async function nodeToPNG(el?: HTMLElement | null, width = 1000): Promise<string 
   }
 }
 
-/** Data/hora local bonitinha, sem dependências */
+/** Data/hora pt-BR sem libs externas */
 function formatNow(): string {
   const d = new Date();
   return new Intl.DateTimeFormat("pt-BR", {
@@ -76,7 +74,7 @@ function formatNow(): string {
   }).format(d);
 }
 
-export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }: Props) {
+export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }: ExportPDFProps) {
   const [loading, setLoading] = useState(false);
 
   const onExport = useCallback(async () => {
@@ -88,11 +86,11 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       const marginX = 48;
       let cursorY = 0;
 
-      // ====== Barra superior fina com a cor do Hero
+      // Faixa superior
       doc.setFillColor(BRAND_BLUE);
       doc.rect(0, 0, pageW, 8, "F");
 
-      // ====== Cabeçalho (fundo branco com borda sutil, logo proporcional)
+      // Cabeçalho com logo proporcional
       const headerH = 84;
       doc.setFillColor("#ffffff");
       doc.setDrawColor(CARD_EDGE);
@@ -118,7 +116,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
 
       cursorY = 20 + headerH + 18;
 
-      // ====== KPIs
+      // KPIs
       const kpiCardW = (pageW - marginX * 2 - 16 * 2) / 3;
       const kpiCardH = 78;
       const kpiStartX = marginX;
@@ -149,7 +147,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
 
       cursorY += kpiCardH + 22;
 
-      // ====== Gráfico 1
+      // Gráfico 1
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
@@ -163,13 +161,11 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       } else {
         doc.setDrawColor(CARD_EDGE);
         doc.setLineWidth(1);
-        doc.setLineDash([4, 3], 0);
         doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
-        doc.setLineDash();
       }
       cursorY += chartH + 26;
 
-      // ====== Gráfico 2
+      // Gráfico 2
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
@@ -182,19 +178,17 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       } else {
         doc.setDrawColor(CARD_EDGE);
         doc.setLineWidth(1);
-        doc.setLineDash([4, 3], 0);
         doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
-        doc.setLineDash();
       }
       cursorY += chartH + 26;
 
-      // ====== quebra antes da tabela
+      // quebra antes da tabela
       if (cursorY > pageH - 180) {
         doc.addPage();
         cursorY = marginX;
       }
 
-      // ====== Tabela resumo por pergunta
+      // Tabela resumo
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
@@ -234,7 +228,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         theme: "grid",
       });
 
-      // ====== nova página: detalhes
+      // Detalhes
       doc.addPage();
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
@@ -264,7 +258,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
         theme: "grid",
       });
 
-      // ====== rodapé
+      // Rodapé
       const year = new Date().getFullYear();
       const footer = `© ${year} NovuSys — Relatório gerado automaticamente`;
       doc.setFont("helvetica", "normal");
@@ -273,7 +267,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }
       const footerW = doc.getTextWidth(footer);
       doc.text(footer, pageW - marginX - footerW, pageH - 16);
 
-      // nome do arquivo
+      // Nome do arquivo
       const pad = (n: number) => String(n).padStart(2, "0");
       const d = new Date();
       const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(
