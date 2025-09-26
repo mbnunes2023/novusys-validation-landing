@@ -148,6 +148,41 @@ function DistBar({
   );
 }
 
+/* ===================== Confiança + Plano de Ação ===================== */
+function getConfidenceAndPlan(N: number) {
+  if (N < 10) {
+    return {
+      level: "Amostra pequena",
+      color: "bg-orange-50 text-orange-700 border-orange-200",
+      bullets: [
+        "Ampliar a coleta: divulgar pesquisa para alcançar ≥ 30 respostas.",
+        "Focar em ICP (tamanho e especialidade) com maior propensão a dor.",
+        "Conduzir 3–5 entrevistas qualitativas para validar hipóteses.",
+      ],
+    };
+  }
+  if (N < 30) {
+    return {
+      level: "Amostra moderada",
+      color: "bg-amber-50 text-amber-700 border-amber-200",
+      bullets: [
+        "Iniciar protótipos/pilotos em 1–2 clínicas dispostas.",
+        "Medir baseline (no-show, glosa, tempo de receita) por 2 semanas.",
+        "Aprimorar questionário para capturar intensidade/valor monetário.",
+      ],
+    };
+  }
+  return {
+    level: "Amostra robusta",
+    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    bullets: [
+      "Priorizar tema líder e iniciar MVP com metas de ROI claras.",
+      "Planejar integrações com sistemas da clínica (agenda, faturamento).",
+      "Definir pricing piloto e contrato de valor (SaaS/assinatura).",
+    ],
+  };
+}
+
 /* ===================== Página ===================== */
 export default function AdminDashboard() {
   const router = useRouter();
@@ -255,6 +290,9 @@ export default function AdminDashboard() {
       rxReworkPct: total ? (rxRework / total) * 100 : 0,
     };
   }, [filtered]);
+
+  /* ===== Confiança + Plano de ação (derivado de N) ===== */
+  const plan = useMemo(() => getConfidenceAndPlan(kpi.total), [kpi.total]);
 
   /* ===== Dados p/ gráficos ===== */
   function dist(
@@ -422,6 +460,25 @@ export default function AdminDashboard() {
           <div className="mt-3 text-4xl font-extrabold text-[var(--brand-1,#1976d2)]">
             {kpi.rxReworkPct.toFixed(0)}%
           </div>
+        </div>
+      </section>
+
+      {/* Confiança da amostra + Plano de ação */}
+      <section className={`rounded-2xl border p-5 ${plan.color}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold">Confiança da amostra</div>
+            <div className="text-2xl font-extrabold mt-1">{plan.level}</div>
+            <div className="text-sm mt-1 opacity-80">N = {kpi.total}</div>
+          </div>
+        </div>
+        <div className="mt-4">
+          <div className="text-sm font-semibold mb-2">Plano de ação recomendado</div>
+          <ul className="list-disc pl-5 space-y-1 text-sm">
+            {plan.bullets.map((b, i) => (
+              <li key={i}>{b}</li>
+            ))}
+          </ul>
         </div>
       </section>
 
