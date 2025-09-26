@@ -1,73 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import * as htmlToImage from "html-to-image";
 import dayjs from "dayjs";
-
-// ========= helpers =========
-
-// carrega /logo.png como dataURL
-async function loadLogoDataURL(path = "/logo.png"): Promise<string> {
-  const res = await fetch(path);
-  const blob = await res.blob();
-  return await new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.readAsDataURL(blob);
-  });
-}
-
-// Converte o primeiro <svg> dentro de um contêiner (ex.: wrapper do Recharts) em PNG dataURL
-async function svgContainerToPngDataURL(container: HTMLElement, scale = 2): Promise<string | null> {
-  const svg = container.querySelector("svg");
-  if (!svg) return null;
-
-  const xml = new XMLSerializer().serializeToString(svg);
-  const svg64 = window.btoa(unescape(encodeURIComponent(xml)));
-  const image64 = "data:image/svg+xml;base64," + svg64;
-
-  // cria canvas e converte
-  const img = new Image();
-  img.src = image64;
-  await img.decode();
-
-  const canvas = document.createElement("canvas");
-  canvas.width = (img.width || svg.clientWidth) * scale;
-  canvas.height = (img.height || svg.clientHeight) * scale;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-  return canvas.toDataURL("image/png");
-}
-
-// ========= tipos esperados =========
-
-type AnswerRow = {
-  created_at: string;
-  doctor_name: string | null;
-  crm: string | null;
-  contact: string | null;
-
-  doctor_role: string | null;
-  clinic_size: string | null;
-
-  q_noshow_relevance: string | null;
-  q_noshow_has_system: string | null;
-  q_noshow_financial_impact: string | null;
-
-  q_glosa_is_problem: string | null;
-  q_glosa_interest: string | null;
-  q_glosa_who_suffers: string | null;
-
-  q_rx_rework: string | null;
-  q_rx_elderly_difficulty: string | null;
-  q_rx_tool_value: string | null;
-
-  comments: string | null;
-};
+import * as htmlToImage from "html-to-image";
 
 type KPI = {
   total: number;
@@ -76,210 +13,281 @@ type KPI = {
   rxReworkPct: number;
 };
 
-// ========= componente =========
+type Answer = Record<string, any>;
 
-export default function ExportPDFButton({
-  kpi,
-  summaryRows,           // linhas agregadas (ex.: [{pergunta:'No-show relevante?', Sim:10, Não:3, Parcialmente:2}, ...])
-  answers,               // respostas (para tabela e comentários)
-  chartRefs,             // { noshowRef: ref<HTMLDivElement>, glosaRef: ref<HTMLDivElement>, rxRef: ref<HTMLDivElement> }
-}: {
+type Props = {
   kpi: KPI;
-  summaryRows: Array<{ pergunta: string; [key: string]: string | number }>;
-  answers: AnswerRow[];
+  summaryRows: Array<Record<string, number | string>>;
+  answers: Answer[];
   chartRefs: {
-    noshowRef?: React.RefObject<HTMLDivElement>;
-    glosaRef?: React.RefObject<HTMLDivElement>;
-    rxRef?: React.RefObject<HTMLDivElement>;
+    noshowRef: React.RefObject<HTMLDivElement>;
+    glosaRef: React.RefObject<HTMLDivElement>;
+    rxRef: React.RefObject<HTMLDivElement>;
   };
-}) {
+};
+
+const BRAND_BLUE = "#1976d2";
+const BRAND_GRAD_LEFT = "#1976d2";
+const BRAND_GRAD_RIGHT = "#2575fc";
+const INK = "#0f172a";
+const INK_SOFT = "#64748b";
+const CARD_EDGE = "#e9edf7";
+
+/** Se tiver logo com fundo transparente, troque aqui */
+const LOGO_SRC = "/logo.png";
+
+/** carrega a imagem e retorna {img, ratio} para desenhar sem achatar */
+async function loadImage(src: string): Promise<{ img: HTMLImageElement; ratio: number }> {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = src;
+  await img.decode();
+  const ratio = img.naturalWidth / img.naturalHeight || 1;
+  return { img, ratio };
+}
+
+/** converte um elemento (gráfico) em dataURL PNG */
+async function nodeToPNG(el?: HTMLElement | null, width = 1000): Promise<string | null> {
+  if (!el) return null;
+  try {
+    const dataUrl = await htmlToImage.toPng(el, {
+      cacheBust: true,
+      pixelRatio: 2,
+      width,
+    });
+    return dataUrl;
+  } catch {
+    return null;
+  }
+}
+
+export default function ExportPDFButton({ kpi, summaryRows, answers, chartRefs }: Props) {
   const [loading, setLoading] = useState(false);
 
-  const brand = {
-    primary: "#1976d2",
-    gradient: "linear-gradient(135deg,#1976d2 0%,#6a11cb 50%,#2575fc 100%)",
-  };
-
-  async function handleExport() {
+  const onExport = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-
-      const doc = new jsPDF({
-        orientation: "p",
-        unit: "pt",
-        format: "a4",
-      });
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = doc.internal.pageSize.getWidth();
-      const margin = 36; // 0.5"
-      let y = margin;
+      const pageH = doc.internal.pageSize.getHeight();
+      const marginX = 48;
+      let cursorY = 0;
 
-      // === header com logo + tarja ===
-      const logo = await loadLogoDataURL("/logo.png");
-      const logoW = 110;
-      const logoH = 110;
+      // ======= header premium =======
+      // barra superior com a paleta do Hero
+      doc.setFillColor(BRAND_BLUE);
+      doc.rect(0, 0, pageW, 8, "F");
 
-      // tarja em gradiente (simulado com retângulo azul claro + texto)
-      doc.setFillColor(240, 245, 255);
-      doc.rect(0, 0, pageW, 64, "F");
+      // faixa do cabeçalho
+      const headerH = 84;
+      doc.setFillColor("#ffffff");
+      doc.setDrawColor(CARD_EDGE);
+      doc.setLineWidth(1);
+      doc.roundedRect(marginX, 20, pageW - marginX * 2, headerH, 10, 10, "FD");
 
-      // logo
-      doc.addImage(logo, "PNG", margin, 16, logoW, logoH * (64 / logoH)); // caber na tarja
+      // logo proporcional (nunca achata)
+      const { img: logo, ratio } = await loadImage(LOGO_SRC);
+      const logoTargetH = 40; // altura alvo (proporção cuidada)
+      const logoTargetW = logoTargetH * ratio;
+      const logoX = marginX + 16;
+      const logoY = 20 + (headerH - logoTargetH) / 2;
+      doc.addImage(logo, "PNG", logoX, logoY, logoTargetW, logoTargetH);
 
-      // título
+      // título + data
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
-      doc.setTextColor(20);
-      doc.text("Relatório da Pesquisa — Clínicas e Consultórios", margin + logoW + 14, 42);
+      doc.setTextColor(INK);
+      doc.setFontSize(20);
+      doc.text("Relatório da Pesquisa — Clínicas e Consultórios", logoX + logoTargetW + 14, logoY + 22);
 
-      // subtítulo
       doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK_SOFT);
       doc.setFontSize(11);
-      doc.setTextColor(90);
-      doc.text(`Gerado em ${dayjs().format("DD/MM/YYYY HH:mm")}`, margin + logoW + 14, 60);
+      doc.text(`Gerado em ${dayjs().format("DD/MM/YYYY HH:mm")}`, logoX + logoTargetW + 14, logoY + 42);
 
-      y = 88;
+      cursorY = 20 + headerH + 18;
 
-      // === KPIs ===
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(25);
-      doc.text("Visão Geral", margin, y);
-      y += 12;
+      // ======= KPIs =======
+      const kpiCardW = (pageW - marginX * 2 - 16 * 2) / 3;
+      const kpiCardH = 78;
+      const kpiStartX = marginX;
+      const kpiGap = 16;
 
-      // cartões KPI
-      const cardW = (pageW - margin * 2 - 24) / 3;
-      const cardH = 64;
+      const drawKpiCard = (x: number, title: string, value: string) => {
+        doc.setDrawColor(CARD_EDGE);
+        doc.setFillColor("#ffffff");
+        doc.roundedRect(x, cursorY, kpiCardW, kpiCardH, 10, 10, "FD");
 
-      const drawKpi = (x: number, title: string, value: string) => {
-        doc.setDrawColor(225);
-        doc.setFillColor(255, 255, 255);
-        doc.roundedRect(x, y, cardW, cardH, 8, 8, "FD");
-        doc.setFontSize(10);
-        doc.setTextColor(105);
-        doc.text(title, x + 12, y + 20);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(20);
-        doc.setTextColor(20);
-        doc.text(value, x + 12, y + 44);
-        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        doc.setTextColor(INK);
+        doc.text(title, x + 14, cursorY + 22);
+
+        doc.setTextColor(BRAND_BLUE);
+        doc.setFontSize(28);
+        doc.text(value, x + 14, cursorY + 56);
       };
 
-      drawKpi(margin, "Total de respostas", String(kpi.total));
-      drawKpi(margin + cardW + 12, "% que consideram no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
-      drawKpi(margin + (cardW + 12) * 2, "% que relatam glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
-
-      y += cardH + 24;
-
-      // === gráficos (se existirem) ===
-      const addChart = async (title: string, ref?: React.RefObject<HTMLDivElement>) => {
-        if (!ref?.current) return;
-        const dataUrl = await svgContainerToPngDataURL(ref.current, 2);
-        if (!dataUrl) return;
-
-        // título
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(13);
-        doc.setTextColor(25);
-        doc.text(title, margin, y);
-
-        // imagem
-        const imgW = pageW - margin * 2;
-        const imgH = (imgW * 9) / 25; // proporção wide
-        y += 8;
-        doc.addImage(dataUrl, "PNG", margin, y, imgW, imgH, undefined, "FAST");
-        y += imgH + 18;
-
-        // quebra de página se necessário
-        if (y > doc.internal.pageSize.getHeight() - 140) {
-          doc.addPage();
-          y = margin;
-        }
-      };
-
-      await addChart("Distribuição — No-show relevante", chartRefs.noshowRef);
-      await addChart("Distribuição — Glosas (recorrência / interesse)", chartRefs.glosaRef);
-      await addChart("Distribuição — Receitas digitais / Telemedicina", chartRefs.rxRef);
-
-      // === tabela resumo ===
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.setTextColor(25);
-      doc.text("Resumo por pergunta", margin, y);
-      y += 6;
-
-      autoTable(doc, {
-        startY: y + 6,
-        styles: { fontSize: 9, cellPadding: 6 },
-        headStyles: { fillColor: [25, 118, 210], textColor: 255 },
-        bodyStyles: { fillColor: [255, 255, 255] },
-        alternateRowStyles: { fillColor: [248, 251, 255] },
-        margin: { left: margin, right: margin },
-        head: [
-          Object.keys(summaryRows[0] || { pergunta: "", Sim: "", Não: "", Parcialmente: "" }),
-        ],
-        body: summaryRows.map((row) => Object.values(row)),
-      });
-
-      y = (doc as any).lastAutoTable?.finalY || y + 24;
-
-      // === comentários (amostra) ===
-      const comments = answers
-        .map((r) => r.comments?.trim())
-        .filter(Boolean) as string[];
-
-      if (comments.length) {
-        if (y > doc.internal.pageSize.getHeight() - 160) {
-          doc.addPage();
-          y = margin;
-        }
-
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(13);
-        doc.setTextColor(25);
-        doc.text("Amostra de comentários (sem dados sensíveis)", margin, y);
-
-        const sample = comments.slice(0, 15).map((c, i) => ({ idx: i + 1, c }));
-
-        autoTable(doc, {
-          startY: y + 8,
-          styles: { fontSize: 9, cellPadding: 6 },
-          headStyles: { fillColor: [25, 118, 210], textColor: 255 },
-          margin: { left: margin, right: margin },
-          columnStyles: {
-            0: { cellWidth: 28, halign: "right" },
-            1: { cellWidth: pageW - margin * 2 - 28 },
-          },
-          head: [["#", "Comentário"]],
-          body: sample.map((s) => [String(s.idx), s.c]),
-        });
-
-        y = (doc as any).lastAutoTable?.finalY || y + 24;
-      }
-
-      // === rodapé ===
-      const footerY = doc.internal.pageSize.getHeight() - 22;
-      doc.setFontSize(9);
-      doc.setTextColor(120);
-      doc.text(
-        `© ${new Date().getFullYear()} NovuSys — Todos os direitos reservados.`,
-        margin,
-        footerY
+      drawKpiCard(kpiStartX, "Total de respostas", `${kpi.total}`);
+      drawKpiCard(kpiStartX + kpiCardW + kpiGap, "% que consideram no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      drawKpiCard(
+        kpiStartX + 2 * (kpiCardW + kpiGap),
+        "% que relatam glosas recorrentes",
+        `${kpi.glosaRecorrentePct.toFixed(0)}%`
       );
 
-      doc.save(`Relatorio-Pesquisa-${dayjs().format("YYYYMMDD-HHmm")}.pdf`);
+      cursorY += kpiCardH + 22;
+
+      // ======= Gráfico 1 =======
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Distribuição — No-show relevante", marginX, cursorY);
+
+      cursorY += 12;
+
+      const g1 = await nodeToPNG(chartRefs.noshowRef.current);
+      const chartH = 220;
+      if (g1) {
+        doc.addImage(g1, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
+      } else {
+        // moldura de placeholder (caso não tenha gráfico)
+        doc.setDrawColor(CARD_EDGE);
+        doc.setLineWidth(1);
+        doc.setLineDash([4, 3], 0);
+        doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
+        doc.setLineDash();
+      }
+
+      cursorY += chartH + 26;
+
+      // ======= Gráfico 2 =======
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Distribuição — Glosas (recorrência / interesse)", marginX, cursorY);
+      cursorY += 12;
+
+      const g2 = await nodeToPNG(chartRefs.glosaRef.current);
+      if (g2) {
+        doc.addImage(g2, "PNG", marginX, cursorY, pageW - marginX * 2, chartH);
+      } else {
+        doc.setDrawColor(CARD_EDGE);
+        doc.setLineWidth(1);
+        doc.setLineDash([4, 3], 0);
+        doc.roundedRect(marginX, cursorY, pageW - marginX * 2, chartH, 10, 10);
+        doc.setLineDash();
+      }
+
+      cursorY += chartH + 26;
+
+      // ======= quebra para tabela =======
+      if (cursorY > pageH - 180) {
+        doc.addPage();
+        cursorY = marginX;
+      }
+
+      // ======= Tabela resumo por pergunta =======
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Resumo consolidado por pergunta", marginX, cursorY);
+
+      cursorY += 10;
+
+      const columns = [
+        { header: "Pergunta", dataKey: "pergunta" },
+        // as demais chaves dos objetos são valores (Sim, Não, etc.)
+        ...Object.keys(
+          summaryRows.reduce((acc, r) => {
+            Object.keys(r).forEach((k) => {
+              if (k !== "pergunta") acc[k] = true;
+            });
+            return acc;
+          }, {} as Record<string, boolean>)
+        ).map((k) => ({ header: k, dataKey: k })),
+      ];
+
+      autoTable(doc, {
+        startY: cursorY + 8,
+        styles: {
+          font: "helvetica",
+          fontSize: 10,
+          textColor: INK,
+          cellPadding: 6,
+          lineColor: CARD_EDGE,
+        },
+        headStyles: {
+          fillColor: [25, 118, 210], // BRAND_BLUE
+          textColor: "#ffffff",
+          fontStyle: "bold",
+        },
+        alternateRowStyles: { fillColor: "#fbfdff" },
+        body: summaryRows,
+        columns,
+        margin: { left: marginX, right: marginX },
+        theme: "grid",
+      });
+
+      // ======= Nova página: Tabela detalhada (respostas cruas) =======
+      doc.addPage();
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text("Respostas detalhadas (sem identificação sensível)", marginX, marginX);
+
+      const firstRow = answers[0] || {};
+      const detailCols = Object.keys(firstRow).map((k) => ({ header: k, dataKey: k }));
+
+      autoTable(doc, {
+        startY: marginX + 10,
+        styles: {
+          font: "helvetica",
+          fontSize: 9,
+          textColor: INK,
+          cellPadding: 5,
+          lineColor: CARD_EDGE,
+        },
+        headStyles: {
+          fillColor: [37, 117, 252], // right brand color
+          textColor: "#ffffff",
+          fontStyle: "bold",
+        },
+        body: answers,
+        columns: detailCols,
+        margin: { left: marginX, right: marginX },
+        theme: "grid",
+      });
+
+      // ======= rodapé pequeno =======
+      const footer = `© ${dayjs().format("YYYY")} NovuSys — Relatório gerado automaticamente`;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(INK_SOFT);
+      const footerW = doc.getTextWidth(footer);
+      doc.text(footer, pageW - marginX - footerW, pageH - 16);
+
+      // ======= salvar =======
+      const fileName = `Relatorio-Pesquisa-${dayjs().format("YYYYMMDD-HHmm")}.pdf`;
+      doc.save(fileName);
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível gerar o PDF. Tente novamente.");
     } finally {
       setLoading(false);
     }
-  }
+  }, [kpi, summaryRows, answers, chartRefs]);
 
   return (
     <button
-      onClick={handleExport}
-      disabled={loading}
       className="btn btn-primary"
-      style={{ backgroundImage: loading ? "none" : undefined }}
+      type="button"
+      onClick={onExport}
+      disabled={loading}
+      title="Exportar PDF"
+      style={{ backgroundImage: `linear-gradient(135deg, ${BRAND_GRAD_LEFT}, ${BRAND_GRAD_RIGHT})` }}
     >
-      {loading ? "Gerando PDF…" : "Exportar PDF"}
+      {loading ? "Gerando..." : "Exportar PDF"}
     </button>
   );
 }
