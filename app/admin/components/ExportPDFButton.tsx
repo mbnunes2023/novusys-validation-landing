@@ -387,104 +387,83 @@ export default function ExportPDFButton({
       drawFooter(doc, pageW, pageH, marginX);
 
       /* ========= PÁG. 5 — Resumo ========= */
-      const tableTopMargin = 14 + 70 + 12 + 14;
-      doc.addPage();
-      autoTable(doc as any, {
-        styles: {
-          font: "helvetica",
-          fontSize: 10,
-          textColor: INK,
-          cellPadding: 6,
-          lineColor: CARD_EDGE,
-        },
-        headStyles: {
-          fillColor: [25, 118, 210],
-          textColor: "#ffffff",
-          fontStyle: "bold",
-        },
-        alternateRowStyles: { fillColor: "#fbfdff" },
-        body: summaryRows,
-        columns: [
-          { header: "Pergunta", dataKey: "pergunta" },
-          ...Object.keys(
-            summaryRows.reduce((acc, r) => {
-              Object.keys(r).forEach((k) => {
-                if (k !== "pergunta") acc[k] = true;
-              });
-              return acc;
-            }, {} as Record<string, boolean>)
-          ).map((k) => ({ header: k, dataKey: k })),
-        ],
-        margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
-        theme: "grid",
-        didDrawPage: () => {
-          const sY = drawHeader(doc, pageW, marginX, title);
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(INK);
-          doc.setFontSize(14);
-          doc.text("Resumo consolidado por pergunta", marginX, sY + 2);
-          drawFooter(doc, pageW, pageH, marginX);
-        },
-      });
+// Espaço extra entre o cabeçalho e o título "Resumo..." (px)
+const HEADER_GAP = 28; // aumente/diminua se quiser mais/menos espaço
+// 14 (offset) + 70 (altura do header card) + 12 (respiro) + HEADER_GAP
+const tableTopMargin = 14 + 70 + 12 + HEADER_GAP;
+
+doc.addPage();
+autoTable(doc as any, {
+  styles: {
+    font: "helvetica",
+    fontSize: 10,
+    textColor: INK,
+    cellPadding: 6,
+    lineColor: CARD_EDGE,
+  },
+  headStyles: {
+    fillColor: [25, 118, 210],
+    textColor: "#ffffff",
+    fontStyle: "bold",
+  },
+  alternateRowStyles: { fillColor: "#fbfdff" },
+  body: summaryRows,
+  columns: [
+    { header: "Pergunta", dataKey: "pergunta" },
+    ...Object.keys(
+      summaryRows.reduce((acc, r) => {
+        Object.keys(r).forEach((k) => {
+          if (k !== "pergunta") acc[k] = true;
+        });
+        return acc;
+      }, {} as Record<string, boolean>)
+    ).map((k) => ({ header: k, dataKey: k })),
+  ],
+  margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
+  theme: "grid",
+  didDrawPage: () => {
+    const sY = drawHeader(doc, pageW, marginX, title);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(INK);
+    doc.setFontSize(14);
+    // empurra o título para baixo usando o mesmo HEADER_GAP
+    doc.text("Resumo consolidado por pergunta", marginX, sY + HEADER_GAP - 10);
+    drawFooter(doc, pageW, pageH, marginX);
+  },
+});
+
 
       /* ========= PÁGs. 6+ — Detalhes ========= */
-      const firstRow = answers[0] || {};
-      const detailCols = Object.keys(firstRow).map((k) => ({ header: k, dataKey: k }));
-      if (detailCols.length) {
-        doc.addPage();
-        autoTable(doc as any, {
-          styles: {
-            font: "helvetica",
-            fontSize: 9,
-            textColor: INK,
-            cellPadding: 5,
-            lineColor: CARD_EDGE,
-          },
-          headStyles: {
-            fillColor: [37, 117, 252],
-            textColor: "#ffffff",
-            fontStyle: "bold",
-          },
-          body: answers,
-          columns: detailCols,
-          margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
-          theme: "grid",
-          didDrawPage: () => {
-            const sY = drawHeader(doc, pageW, marginX, title);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(INK);
-            doc.setFontSize(14);
-            doc.text("Respostas detalhadas (sem identificação sensível)", marginX, sY + 2);
-            drawFooter(doc, pageW, pageH, marginX);
-          },
-        });
-      }
-
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const d = new Date();
-      const filename = `Relatorio-Pesquisa-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(
-        d.getDate()
-      )}-${pad(d.getHours())}${pad(d.getMinutes())}.pdf`;
-      doc.save(filename);
-    } catch (e) {
-      console.error(e);
-      alert("Não foi possível gerar o PDF. Tente novamente.");
-    } finally {
-      setLoading(false);
-    }
-  }, [kpi, summaryRows, answers, chartRefs]);
-
-  return (
-    <button
-      className="btn btn-primary"
-      type="button"
-      onClick={onExport}
-      disabled={loading}
-      style={{
-        backgroundImage: `linear-gradient(135deg, ${BRAND_GRAD_LEFT}, ${BRAND_GRAD_RIGHT})`,
-      }}
-    >
-      {loading ? "Gerando..." : "Exportar PDF"}
-    </button>
-  );
+if (detailCols.length) {
+  doc.addPage();
+  autoTable(doc as any, {
+    styles: {
+      font: "helvetica",
+      fontSize: 9,
+      textColor: INK,
+      cellPadding: 5,
+      lineColor: CARD_EDGE,
+    },
+    headStyles: {
+      fillColor: [37, 117, 252],
+      textColor: "#ffffff",
+      fontStyle: "bold",
+    },
+    body: answers,
+    columns: detailCols,
+    margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
+    theme: "grid",
+    didDrawPage: () => {
+      const sY = drawHeader(doc, pageW, marginX, title);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text(
+        "Respostas detalhadas (sem identificação sensível)",
+        marginX,
+        sY + HEADER_GAP - 10
+      );
+      drawFooter(doc, pageW, pageH, marginX);
+    },
+  });
 }
