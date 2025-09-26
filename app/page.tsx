@@ -191,31 +191,43 @@ export default function Page() {
     </div>
   );
 
-  /* ========= TELA DE AGRADECIMENTO — ENXUTA ========= */
+    /* ========= TELA DE AGRADECIMENTO — CARD PREMIUM ========= */
   if (submitted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50">
-        <div className="max-w-4xl mx-auto px-6 py-14">
-          {/* Mensagem centralizada (sem selo, sem gráfico, sem botão extra) */}
-          <div className="min-h-[50vh] flex flex-col items-center justify-center text-center">
-            <h1 className="text-4xl md:text-5xl font-extrabold">
-              Obrigado pela resposta!
-            </h1>
-            <p className="mt-3 text-slate-600 max-w-2xl">
-              Sua contribuição ajuda a priorizar um MVP útil para clínicas e consultórios.
-            </p>
-          </div>
+    // Esconde a faixa branca com logo gigante enquanto esta tela estiver ativa
+    useEffect(() => {
+      document.body.classList.add("hide-brand-bar");
+      return () => document.body.classList.remove("hide-brand-bar");
+    }, []);
 
-          <footer className="mt-10 text-xs text-slate-500 text-center">
+    return (
+      <div className="min-h-screen bg-[var(--page-bg)] flex items-center justify-center px-6 py-12">
+        <div className="card w-full max-w-2xl text-center">
+          <img
+            src="/logo.png"
+            alt="NovuSys"
+            className="mx-auto w-24 h-24 rounded-xl shadow-sm"
+          />
+
+          <h1 className="mt-4 text-3xl md:text-4xl font-extrabold">
+            Obrigado pela resposta!
+          </h1>
+
+          <p className="mt-2 text-slate-600">
+            Sua contribuição ajuda a priorizar um MVP útil para clínicas e consultórios.
+          </p>
+
+          {/* divisor suave, igual aos cards do formulário */}
+          <div className="mt-6 h-px bg-[linear-gradient(90deg,transparent,#e9edf7,transparent)]" />
+
+          <p className="mt-6 text-xs text-slate-500">
             © {new Date().getFullYear()} <span className="font-medium">NovuSys</span> — Todos os direitos reservados.{" "}
-            <a href="/privacy" className="underline">
-              Política de privacidade
-            </a>
-          </footer>
+            <a href="/privacy" className="underline">Política de privacidade</a>
+          </p>
         </div>
       </div>
     );
   }
+
 
   /* ================= PÁGINA (HERO + FORM) ================= */
   return (
