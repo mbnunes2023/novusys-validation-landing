@@ -324,3 +324,5 @@ html,body{ background:var(--page-bg); }
 .btn-outline:hover {
   border-color: #cfd7e6;
 }
+/* Oculta o brand-bar só quando a página colocar a classe no <body> */
+.hide-brand-bar .brand-bar { display: none; }
