@@ -19,7 +19,7 @@ type Answer = Record<string, any>;
 
 type Props = {
   kpi: KPI;
-  summaryRows: Array<Record<string, number | string>>;
+  summaryRows: Array<Record<string, number | string>>; // mantido, mas não usado na nova tabela
   answers: Answer[];
   chartRefs?: {
     noshowRef: React.RefObject<HTMLDivElement>;
@@ -44,11 +44,6 @@ function formatNow(): string {
     dateStyle: "short",
     timeStyle: "short",
   }).format(d);
-}
-
-function percent(part: number, total: number) {
-  if (!total) return "0%";
-  return `${Math.round((part / total) * 100)}%`;
 }
 
 function usableHeight(startY: number, pageH: number, bottomPadding = 40) {
@@ -192,6 +187,47 @@ function measureBarBlock(lines: number) {
   return 8 + lines * (ROW_H + ROW_GAP);
 }
 
+// NOVA versão: % por respondentes daquela pergunta; opção para incluir/ocultar "Não informado"
+function dist(
+  answers: Answer[],
+  field: keyof Answer,
+  order: string[],
+  opts?: { includeUnknown?: boolean; unknownLabel?: string }
+): DistItem[] {
+  const includeUnknown = !!opts?.includeUnknown;
+  const unknownLabel = opts?.unknownLabel ?? "Não informado";
+
+  const counts: Record<string, number> = {};
+  order.forEach((k) => (counts[k] = 0));
+  let unknownCount = 0;
+
+  answers.forEach((a) => {
+    const v = (a[field] as string) ?? "";
+    if (!v || !order.includes(v)) {
+      unknownCount += 1;
+    } else {
+      counts[v] += 1;
+    }
+  });
+
+  const answeredTotal = Object.values(counts).reduce((s, n) => s + n, 0);
+  const denom = includeUnknown ? answeredTotal + unknownCount : answeredTotal;
+
+  const toPct = (n: number) => (denom ? `${Math.round((n / denom) * 100)}%` : "0%");
+
+  const items: DistItem[] = order.map((k) => ({
+    label: k,
+    count: counts[k],
+    pct: toPct(counts[k]),
+  }));
+
+  if (includeUnknown && unknownCount > 0) {
+    items.push({ label: unknownLabel, count: unknownCount, pct: toPct(unknownCount) });
+  }
+
+  return items;
+}
+
 function drawBarBlock(
   doc: jsPDF,
   title: string,
@@ -232,68 +268,6 @@ function drawBarBlock(
   return y + items.length * (ROW_H + ROW_GAP);
 }
 
-/* ===================== Distribuições & Insights ===================== */
-
-function dist(answers: Answer[], field: keyof Answer, order: string[]): DistItem[] {
-  const total = answers.length;
-  const counts: Record<string, number> = {};
-  order.forEach((k) => (counts[k] = 0));
-  answers.forEach((a) => {
-    const v = (a[field] as string) || "—";
-    if (!(v in counts)) counts[v] = 0;
-    counts[v] += 1;
-  });
-  return Object.keys(counts).map((k) => ({
-    label: k,
-    count: counts[k],
-    pct: percent(counts[k], total),
-  }));
-}
-
-// Gera 3–5 frases de insight em linguagem executiva.
-function generateInsights(kpi: KPI, answers: Answer[]) {
-  const insights: string[] = [];
-
-  // 1) No-show
-  const relev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
-  const yesPct = parseInt(relev.find((r) => r.label === "Sim")?.pct || "0");
-  if (yesPct >= 50) {
-    insights.push(`O no-show é percebido como relevante por ${yesPct}% dos respondentes, reforçando a necessidade de uma abordagem ativa de mitigação.`);
-  }
-
-  // 2) Glosas
-  const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
-  const glosaYes = parseInt(glosaRec.find((r) => r.label === "Sim")?.pct || "0");
-  if (glosaYes >= 40) {
-    insights.push(`Glosas recorrentes afetam o dia a dia: ${glosaYes}% indicam ocorrência, o que abre espaço para prevenção pré-envio.`);
-  }
-
-  // 3) Retrabalho em receitas
-  const rx = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
-  const rxYes = parseInt(rx.find((r) => r.label === "Sim")?.pct || "0");
-  if (rxYes >= 30) {
-    insights.push(`Receitas digitais ainda geram retrabalho (${rxYes}%), sugerindo oportunidade em ferramentas de apoio e padronização.`);
-  }
-
-  // 4) KPI macro
-  insights.push(
-    `O estudo consolida ${kpi.total} respostas; estimativas de impacto mostram ${kpi.noshowYesPct.toFixed(
-      0
-    )}% de no-show relevante, ${kpi.glosaRecorrentePct.toFixed(
-      0
-    )}% de glosas recorrentes e ${kpi.rxReworkPct.toFixed(
-      0
-    )}% de retrabalho em receitas.`
-  );
-
-  // 5) Call-to-action
-  insights.push(
-    `Recomendação: priorizar pilotos rápidos em no-show e glosas (checagem pré-envio), acompanhados de um fluxo assistido para receitas.`
-  );
-
-  return insights.slice(0, 5);
-}
-
 /* ===================== Tabela “Detalhes” com curadoria ===================== */
 
 const SENSITIVE_KEYS = new Set([
@@ -321,6 +295,19 @@ const HEADER_MAP: Record<string, string> = {
   comments: "Observações",
 };
 
+// perguntas + opções (ordem)
+const QUESTIONS: Array<{ key: keyof Answer; label: string; options: string[] }> = [
+  { key: "q_noshow_relevance", label: "No-show relevante?", options: ["Sim", "Não", "Parcialmente"] },
+  { key: "q_noshow_has_system", label: "Sistema p/ no-show?", options: ["Sim", "Não"] },
+  { key: "q_noshow_financial_impact", label: "Impacto financeiro", options: ["Baixo impacto", "Médio impacto", "Alto impacto"] },
+  { key: "q_glosa_is_problem", label: "Glosas recorrentes?", options: ["Sim", "Não", "Às vezes"] },
+  { key: "q_glosa_interest", label: "Checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
+  { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
+  { key: "q_rx_rework", label: "Receitas geram retrabalho?", options: ["Sim", "Não", "Raramente"] },
+  { key: "q_rx_elderly_difficulty", label: "Pacientes têm dificuldade?", options: ["Sim", "Não", "Em parte"] },
+  { key: "q_rx_tool_value", label: "Valor em ferramenta de apoio", options: ["Sim", "Não", "Talvez"] },
+];
+
 /* ===================== Componente ===================== */
 
 export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
@@ -346,14 +333,12 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       const coverY = 80;
       const coverW = pageW - marginX * 2;
 
-      // logo grande
       if (logoDataUrl) {
         try {
           doc.addImage(logoDataUrl, "PNG", coverX + coverW - 260, coverY - 20, 220, 66);
         } catch {}
       }
 
-      // título & subtítulo
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(26);
@@ -364,11 +349,9 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       doc.setFontSize(14);
       doc.text("Clínicas e Consultórios — Sumário Executivo", coverX, coverY + 46);
 
-      // data
       doc.setFontSize(10);
       doc.text(`Gerado em ${formatNow()}`, coverX, coverY + 66);
 
-      // caixa de destaque
       doc.setDrawColor(CARD_EDGE);
       doc.setFillColor("#ffffff");
       doc.roundedRect(coverX, coverY + 86, coverW, 110, 12, 12, "FD");
@@ -378,7 +361,25 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       doc.setFontSize(14);
       doc.text("Resumo Executivo — Principais insights", coverX + 18, coverY + 110);
 
-      const insights = generateInsights(kpi, answers);
+      // insights simples
+      const insights: string[] = (() => {
+        const arr: string[] = [];
+        const ns = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
+        const nsYes = parseInt(ns.find((r) => r.label === "Sim")?.pct || "0");
+        if (nsYes >= 50) arr.push(`No-show relevante para ${nsYes}% dos respondentes — pede ação de mitigação.`);
+        const gr = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
+        const grYes = parseInt(gr.find((r) => r.label === "Sim")?.pct || "0");
+        if (grYes >= 40) arr.push(`Glosas recorrentes presentes (${grYes}%) — oportunidade de checagem pré-envio.`);
+        const rx = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
+        const rxYes = parseInt(rx.find((r) => r.label === "Sim")?.pct || "0");
+        if (rxYes >= 30) arr.push(`Receitas geram retrabalho (${rxYes}%) — padronização/assistente pode ajudar.`);
+        arr.push(
+          `Amostra: ${kpi.total} respostas | No-show ${kpi.noshowYesPct.toFixed(0)}% | Glosas ${kpi.glosaRecorrentePct.toFixed(0)}% | Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`
+        );
+        arr.push(`Próximo passo: piloto rápido em no-show e glosas + fluxo assistido para receitas.`);
+        return arr.slice(0, 5);
+      })();
+
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
       doc.setFontSize(12);
@@ -391,7 +392,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
 
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= SUMÁRIO (TOC) ========= */
+      /* ========= SUMÁRIO ========= */
       doc.addPage();
       const tocStartY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       doc.setFont("helvetica", "bold");
@@ -415,7 +416,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       });
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. KPIs ========= */
+      /* ========= KPIs ========= */
       let startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
       const gap = 16;
       const cardW = (pageW - marginX * 2 - gap * 3) / 4;
@@ -435,12 +436,11 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       drawKpiCard(doc, marginX + 3 * (cardW + gap), y, cardW, cardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. No-show ========= */
+      /* ========= No-show ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-
-      const noShowRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]);
-      const noShowSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]);
-      const noShowImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]);
+      const noShowRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"], { includeUnknown: false });
+      const noShowSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"], { includeUnknown: false });
+      const noShowImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"], { includeUnknown: false });
 
       const leftH = measureBarBlock(noShowRelev.length) + 18 + measureBarBlock(noShowSys.length);
       const rightH = measureBarBlock(noShowImpact.length);
@@ -461,19 +461,17 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       col2Y = drawBarBlock(doc, "Impacto financeiro mensal", noShowImpact, col2X, col2Y, colW);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. Glosas ========= */
+      /* ========= Glosas ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-
-      const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]);
-      const glosaInterest = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]);
-      const glosaWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]);
+      const glosaRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"], { includeUnknown: false });
+      const glosaInterest = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"], { includeUnknown: false });
+      const glosaWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"], { includeUnknown: false });
 
       const gLeftH = measureBarBlock(glosaRec.length) + 18 + measureBarBlock(glosaInterest.length);
       const gRightH = measureBarBlock(glosaWho.length);
       const gGridH = Math.max(gLeftH, gRightH);
 
       y = centeredStartY(startY, pageH, gGridH);
-
       let col1Y_glosa = y;
       col1Y_glosa = drawBarBlock(doc, "Glosas recorrentes", glosaRec, col1X, col1Y_glosa, colW);
       col1Y_glosa += 18;
@@ -483,19 +481,17 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       col2Y_glosa = drawBarBlock(doc, "Quem sofre mais", glosaWho, col2X, col2Y_glosa, colW);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. Receitas Digitais ========= */
+      /* ========= Receitas Digitais ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-
-      const rxRework = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]);
-      const rxDiff = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]);
-      const rxValue = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]);
+      const rxRework = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"], { includeUnknown: false });
+      const rxDiff = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"], { includeUnknown: false });
+      const rxValue = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"], { includeUnknown: false });
 
       const rLeftH = measureBarBlock(rxRework.length) + 18 + measureBarBlock(rxDiff.length);
       const rRightH = measureBarBlock(rxValue.length);
       const rGridH = Math.max(rLeftH, rRightH);
 
       y = centeredStartY(startY, pageH, rGridH);
-
       let col1Y_rx = y;
       col1Y_rx = drawBarBlock(doc, "Receitas geram retrabalho", rxRework, col1X, col1Y_rx, colW);
       col1Y_rx += 18;
@@ -505,33 +501,50 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       col2Y_rx = drawBarBlock(doc, "Valor em ferramenta de apoio", rxValue, col2X, col2Y_rx, colW);
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁG. Resumo consolidado (tabela) ========= */
+      /* ========= Resumo consolidado (tabela longa e clara) ========= */
       const HEADER_GAP = 28;
       const tableTopMargin = 14 + 70 + 12 + HEADER_GAP;
 
+      // monta linhas Pergunta | Opção | Qtde | %
+      const summaryLong: Array<{ pergunta: string; opcao: string; qtde: number; pct: string }> = [];
+      QUESTIONS.forEach((q) => {
+        const d = dist(answers, q.key, q.options, { includeUnknown: true, unknownLabel: "Não informado" });
+        // recalcula % sobre quem respondeu (sem "Não informado"):
+        const answered = d.filter((x) => x.label !== "Não informado");
+        const denom = answered.reduce((s, x) => s + x.count, 0) || 0;
+        d.forEach((item) => {
+          if (item.count === 0) return; // só mostra opções existentes
+          let pct = "0%";
+          if (item.label === "Não informado") {
+            // % sobre o total (respondidos + não respondidos) para transparência
+            const total = answered.reduce((s, x) => s + x.count, 0) + (d.find((x) => x.label === "Não informado")?.count || 0);
+            pct = total ? `${Math.round((item.count / total) * 100)}%` : "0%";
+          } else {
+            pct = denom ? `${Math.round((item.count / denom) * 100)}%` : "0%";
+          }
+          summaryLong.push({ pergunta: q.label, opcao: item.label, qtde: item.count, pct });
+        });
+      });
+
       doc.addPage();
       autoTable(doc as any, {
-        styles: {
-          font: "helvetica",
-          fontSize: 10,
-          textColor: INK,
-          cellPadding: 6,
-          lineColor: CARD_EDGE,
-        },
+        styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
         headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
         alternateRowStyles: { fillColor: "#fbfdff" },
-        body: summaryRows,
+        body: summaryLong,
         columns: [
           { header: "Pergunta", dataKey: "pergunta" },
-          ...Object.keys(
-            summaryRows.reduce((acc, r) => {
-              Object.keys(r).forEach((k) => {
-                if (k !== "pergunta") acc[k] = true;
-              });
-              return acc;
-            }, {} as Record<string, boolean>)
-          ).map((k) => ({ header: k, dataKey: k })),
+          { header: "Opção", dataKey: "opcao" },
+          { header: "Qtde", dataKey: "qtde" },
+          { header: "%", dataKey: "pct" },
         ],
+        columnStyles: {
+          pergunta: { cellWidth: 240, overflow: "linebreak" },
+          opcao: { cellWidth: 220, overflow: "linebreak" },
+          qtde: { cellWidth: 60, halign: "right" },
+          pct: { cellWidth: 50, halign: "right" },
+        },
+        tableWidth: pageW - marginX * 2,
         margin: { left: marginX, right: marginX, top: tableTopMargin, bottom: 26 },
         theme: "grid",
         didDrawPage: () => {
@@ -539,12 +552,12 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
           doc.setFont("helvetica", "bold");
           doc.setTextColor(INK);
           doc.setFontSize(14);
-          doc.text("Resumo consolidado por pergunta", marginX, sY + HEADER_GAP - 10);
+          doc.text("Resumo consolidado por pergunta (opções e percentuais)", marginX, sY + HEADER_GAP - 10);
           drawFooter(doc, pageW, pageH, marginX);
         },
       });
 
-      /* ========= PÁG. Respostas detalhadas (curadas) ========= */
+      /* ========= Respostas detalhadas (curadas) ========= */
       const allKeys = answers && answers.length ? Array.from(new Set(answers.flatMap(a => Object.keys(a ?? {})))) : [];
       const questionKeys = allKeys.filter(k => k.startsWith("q_") && !SENSITIVE_KEYS.has(k));
       if (allKeys.includes("comments") && !SENSITIVE_KEYS.has("comments")) questionKeys.push("comments");
@@ -572,13 +585,7 @@ export default function ExportPDFButton({ kpi, summaryRows, answers }: Props) {
       if (detailCols.length) {
         doc.addPage();
         autoTable(doc as any, {
-          styles: {
-            font: "helvetica",
-            fontSize: 10,
-            textColor: INK,
-            cellPadding: 5,
-            lineColor: CARD_EDGE,
-          },
+          styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 5, lineColor: CARD_EDGE },
           headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold" },
           body: detailBody,
           columns: detailCols,
