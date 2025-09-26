@@ -139,7 +139,7 @@ export default function AdminDashboard() {
   const [roleSel, setRoleSel] = useState<string[]>([]);        // Especialidade
   const [respSel, setRespSel] = useState<string>("Todos");     // R-xx
 
-  // Refs que o PDF pode “fotografar” (se quiser usar depois)
+  // Refs (opcional, p/ PDF)
   const noshowRef = useRef<HTMLDivElement>(null);
   const glosaRef  = useRef<HTMLDivElement>(null);
   const rxRef     = useRef<HTMLDivElement>(null);
@@ -216,7 +216,7 @@ export default function AdminDashboard() {
     };
   }, [filtered]);
 
-  // Distribuições (sempre sobre “filtered”)
+  // Distribuições
   const distNoShowRelev   = makeDist(filtered.map(a => a.q_noshow_relevance), ["Sim", "Parcialmente", "Não"]);
   const distNoShowSys     = makeDist(filtered.map(a => a.q_noshow_has_system), ["Sim", "Não"]);
   const distNoShowImpact  = makeDist(filtered.map(a => a.q_noshow_financial_impact), ["Baixo impacto", "Médio impacto", "Alto impacto"]);
@@ -229,12 +229,11 @@ export default function AdminDashboard() {
   const distRxDiff        = makeDist(filtered.map(a => a.q_rx_elderly_difficulty), ["Sim", "Em parte", "Não"]);
   const distRxValue       = makeDist(filtered.map(a => a.q_rx_tool_value), ["Sim", "Talvez", "Não"]);
 
-  // Lista de respondentes (após filtros exceto o próprio "Respondente")
+  // Lista de respondentes (após filtros, para o dropdown)
   const respondentOptions = useMemo(() => {
     return ["Todos", ...filtered.map((_, i) => `R-${String(i + 1).padStart(2, "0")}`)];
   }, [filtered]);
 
-  // Reset filtros
   function resetFilters() {
     setQuick("all");
     setFrom("");
@@ -242,6 +241,57 @@ export default function AdminDashboard() {
     setSizeSel([]);
     setRoleSel([]);
     setRespSel("Todos");
+  }
+
+  // ====== Identificação / Leads (com consentimento) ======
+  type Lead = {
+    code: string;
+    name: string;
+    crm: string;
+    contact: string;
+    role: string;
+    size: string;
+    date: string;
+  };
+
+  const leads: Lead[] = useMemo(() => {
+    return filtered
+      .map((a, i) => ({ a, i }))
+      .filter(x => x.a.consent_contact === true || x.a.consent === true)
+      .map(({ a, i }) => ({
+        code: `R-${String(i + 1).padStart(2, "0")}`,
+        name: (a.doctor_name || "").trim(),
+        crm: (a.crm || "").trim(),
+        contact: (a.contact || "").trim(),
+        role: a.doctor_role || "",
+        size: a.clinic_size || "",
+        date: parseDateISO(a.created_at)?.toLocaleString("pt-BR") || "",
+      }))
+      .filter(l => l.name || l.crm || l.contact);
+  }, [filtered]);
+
+  function contactHref(c: string) {
+    const s = c.trim();
+    if (!s) return "#";
+    if (s.includes("@")) return `mailto:${s}`;
+    const digits = s.replace(/\D/g, "");
+    if (digits.length >= 10) return `https://wa.me/${digits}`;
+    return "#";
+  }
+  async function copy(text: string) {
+    try { await navigator.clipboard.writeText(text); } catch {}
+  }
+  function exportCSV(rows: Lead[]) {
+    const header = ["Codigo","Nome","CRM","Contato","Funcao","Tamanho","Data"];
+    const body = rows.map(r => [r.code, r.name, r.crm, r.contact, r.role, r.size, r.date]);
+    const csv = [header, ...body].map(line => line.map(v => `"${(v || "").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "leads_identificados.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   if (loading) {
@@ -263,8 +313,8 @@ export default function AdminDashboard() {
             glosaRecorrentePct: kpi.glosaRecorrentePct,
             rxReworkPct: kpi.rxReworkPct,
           }}
-          summaryRows={[]} // mantido por compatibilidade
-          answers={filtered} // << exporta o PDF com os dados filtrados!
+          summaryRows={[]}
+          answers={filtered}
           chartRefs={{ noshowRef, glosaRef, rxRef }}
         />
       </div>
@@ -405,18 +455,78 @@ export default function AdminDashboard() {
           <DistBar title="Valor em ferramenta de apoio" data={distRxValue} />
         </div>
       </section>
+
+      {/* ===================== Identificação / Leads ===================== */}
+      <section className="card">
+        <div className="flex items-center justify-between">
+          <h2 className="card-title">Identificação (somente com consentimento)</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => exportCSV(leads)}
+              className="px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-sm"
+            >
+              Exportar CSV
+            </button>
+          </div>
+        </div>
+
+        {leads.length === 0 ? (
+          <div className="text-slate-500 mt-2">Nenhum contato identificado nos filtros atuais.</div>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-600">
+                  <th className="py-2 pr-4">Resp.</th>
+                  <th className="py-2 pr-4">Nome</th>
+                  <th className="py-2 pr-4">CRM</th>
+                  <th className="py-2 pr-4">Contato</th>
+                  <th className="py-2 pr-4">Função</th>
+                  <th className="py-2 pr-4">Tamanho</th>
+                  <th className="py-2 pr-4">Data</th>
+                  <th className="py-2 pr-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map((l) => (
+                  <tr key={l.code} className="border-t border-slate-200">
+                    <td className="py-2 pr-4 font-semibold text-slate-700">{l.code}</td>
+                    <td className="py-2 pr-4">{l.name || "—"}</td>
+                    <td className="py-2 pr-4">{l.crm || "—"}</td>
+                    <td className="py-2 pr-4">
+                      {l.contact ? (
+                        <a href={contactHref(l.contact)} target="_blank" rel="noreferrer" className="text-[var(--brand-1)] underline">
+                          {l.contact}
+                        </a>
+                      ) : "—"}
+                    </td>
+                    <td className="py-2 pr-4">{l.role || "—"}</td>
+                    <td className="py-2 pr-4">{l.size || "—"}</td>
+                    <td className="py-2 pr-4">{l.date}</td>
+                    <td className="py-2 pr-2">
+                      {l.contact && (
+                        <button
+                          onClick={() => copy(l.contact)}
+                          className="px-2 py-1 rounded border border-slate-300 text-xs hover:bg-slate-50"
+                          title="Copiar contato"
+                        >
+                          Copiar
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-/* ========== estilos utilitários (Tailwind) ==========
-   Estes utilitários já costumam existir no seu projeto, mas deixo
-   aqui como referência de classes que usei: 
-   .card, .card-title, .input 
-   Se não existir, crie no seu CSS global:
-
+/* ===== util classes (Tailwind) =====
 .card{ @apply rounded-2xl border border-slate-200 bg-white p-4 shadow-sm; }
 .card-title{ @apply text-lg font-bold text-slate-900; }
-.input{ @apply px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--brand-1)] focus:border-[var(--brand-1)];
-}
+.input{ @apply px-3 py-2 rounded-xl border border-slate-300 outline-none focus:ring-2 focus:ring-[var(--brand-1)] focus:border-[var(--brand-1)]; }
 */
