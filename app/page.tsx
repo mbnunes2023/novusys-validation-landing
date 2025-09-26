@@ -231,36 +231,47 @@ export default function Page() {
   return (
     <div className="min-h-screen">
       {/* HERO premium */}
-      <section
-        className="w-full"
-        style={{ background: brand.gradient, color: "white" }}
+<section
+  className="w-full"
+  style={{ background: brand.gradient, color: "white" }}
+>
+  <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col items-center">
+    <h1
+      className="font-extrabold leading-tight drop-shadow text-center whitespace-nowrap"
+      style={{
+        // diminui em telas menores para não quebrar
+        fontSize: "clamp(28px, 6.4vw, 64px)",
+      }}
+    >
+      Pesquisa para Clínicas e Consultórios
+    </h1>
+
+    <p
+      className="mt-3 text-white/90 text-center whitespace-nowrap"
+      style={{
+        // mantém em 1 linha, ajustando para caber
+        fontSize: "clamp(14px, 2.2vw, 20px)",
+      }}
+    >
+      Leva 2–3 minutos. Queremos entender o que realmente importa no seu dia a dia para priorizar um MVP útil.
+    </p>
+
+    <div className="mt-5">
+      <button
+        className="btn btn-outline"
+        style={{ background: "white" }}
+        onClick={() => {
+          setShowForm(true);
+          setTimeout(() => {
+            formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 30);
+        }}
       >
-        <div className="max-w-4xl mx-auto px-6 py-10">
-          <h1 className="text-3xl md:text-5xl font-extrabold leading-tight drop-shadow">
-            Pesquisa para Clínicas e Consultórios
-          </h1>
-          <p className="mt-3 text-white/90 max-w-2xl">
-            Leva 2–3 minutos. Queremos entender o que realmente importa no seu dia a dia para priorizar um MVP útil.
-          </p>
-          <div className="mt-5">
-            <button
-              className="btn btn-outline"
-              style={{ background: "white" }}
-              onClick={() => {
-                setShowForm(true);
-                setTimeout(() => {
-                  formRef.current?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                  });
-                }, 30);
-              }}
-            >
-              Começar agora
-            </button>
-          </div>
-        </div>
-      </section>
+        Começar agora
+      </button>
+    </div>
+  </div>
+</section>
 
       {/* Formulário só aparece após clicar */}
       {showForm ? (
