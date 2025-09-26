@@ -315,7 +315,6 @@ const SECTIONS: Record<
     questions: [
       { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não", "Às vezes"] },
       { key: "q_glosa_interest", label: "Interesse em checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
-      // <<< A LINHA QUE QUEBROU NO BUILD ESTÁ CORRETA ABAIXO
       { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
     ],
   },
@@ -364,7 +363,7 @@ function renderSectionTable(
     startY: topY,
     styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
     headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
-    body: rows.length ? rows : [{ pergunta: "—", opcao: "—", qtde: 0, pct: "0%" } ],
+    body: rows.length ? rows : [{ pergunta: "—", opcao: "—", qtde: 0, pct: "0%" }],
     columns: [
       { header: section.title, dataKey: "pergunta" },
       { header: "Opção", dataKey: "opcao" },
@@ -397,6 +396,7 @@ function renderSectionTable(
 
 /* ===================== Respostas detalhadas — Premium ===================== */
 
+/** desenha um "pill" com texto dentro */
 function drawPill(doc: jsPDF, x: number, y: number, text: string) {
   const padX = 6;
   const padY = 4;
@@ -418,6 +418,7 @@ function safeText(v: any): string {
   return String(v);
 }
 
+/** Cards 2-col para ≤ 20 respostas */
 function renderDetailedAsCards(
   doc: jsPDF,
   answers: Answer[],
@@ -442,14 +443,17 @@ function renderDetailedAsCards(
     const col = idx % 2;
     const x = marginX + col * (colW + gap);
 
+    // medir comentário (resumo)
     const commentRaw = (a.comments || "").toString().trim();
     const comment = commentRaw ? commentRaw : "";
     const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
     const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
 
-    const baseH = 24 + 8 + 3 * 28 + (comment ? 18 : 0) + commentH + 18;
+    // altura básica do card
+    const baseH = 24 /*title*/ + 8 /*id line*/ + 3 * 28 /*3 blocos pills*/ + (comment ? 18 : 0) + commentH + 18;
     let cardH = baseH;
 
+    // quebra de página?
     if (y + cardH > pageH - 60) {
       y = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 14;
       doc.setFont("helvetica", "bold");
@@ -458,16 +462,19 @@ function renderDetailedAsCards(
       doc.text("Respostas detalhadas (cartões)", marginX, y - 12);
     }
 
+    // card
     doc.setDrawColor(CARD_EDGE);
     doc.setFillColor("#ffffff");
     doc.roundedRect(x, y, colW, cardH, 12, 12, "FD");
 
+    // cabeçalho
     const code = `R-${String(idx + 1).padStart(2, "0")}`;
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(12);
     doc.text(`Resposta ${code}`, x + 14, y + 22);
 
+    // identificação (se consentida)
     const consent = !!(a.consent_contact || a.consent);
     if (consent) {
       const idLine = [safeText(a.doctor_name), safeText(a.crm), safeText(a.contact)]
@@ -481,8 +488,10 @@ function renderDetailedAsCards(
       }
     }
 
+    // blocos
     let rowY = y + (consent ? 50 : 42);
 
+    // No-show
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(11);
@@ -494,6 +503,7 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_noshow_financial_impact));
     rowY += 28;
 
+    // Glosas
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(11);
@@ -505,6 +515,7 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_glosa_who_suffers));
     rowY += 28;
 
+    // Receitas
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(11);
@@ -516,6 +527,7 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_rx_tool_value));
     rowY += 28;
 
+    // Comentário (resumo)
     if (commentLines.length) {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
@@ -530,14 +542,18 @@ function renderDetailedAsCards(
       rowY += commentH;
     }
 
+    // rodapé do card
     rowY += 12;
     const usedH = rowY - y;
-    if (usedH + 10 > cardH) cardH = usedH + 10;
+    if (usedH + 10 > cardH) {
+      cardH = usedH + 10;
+    }
 
     if (col === 1) y += cardH + 12;
   });
 }
 
+/** Tabelas por tema para > 20 respostas */
 function renderDetailedAsTables(
   doc: jsPDF,
   answers: Answer[],
@@ -613,6 +629,38 @@ function renderDetailedAsTables(
   });
 }
 
+/* ===================== NOVO: Confiança + Plano (somente adição) ===================== */
+function getConfidencePlan(total: number): { label: string; bullets: string[] } {
+  if (total < 10) {
+    return {
+      label: "Amostra pequena",
+      bullets: [
+        "Ampliar a coleta para ≥ 30 respostas antes de grandes decisões.",
+        "Focar divulgação no ICP (tamanho e especialidade mais relevantes).",
+        "Realizar 3–5 entrevistas qualitativas para validar hipóteses.",
+      ],
+    };
+  }
+  if (total < 30) {
+    return {
+      label: "Amostra moderada",
+      bullets: [
+        "Iniciar protótipos/pilotos controlados em 1–2 clínicas.",
+        "Medir baseline por 2 semanas (no-show, glosa, tempo de receita).",
+        "Aprimorar coleta para mensurar valor monetário das dores.",
+      ],
+    };
+  }
+  return {
+    label: "Amostra robusta",
+    bullets: [
+        "Priorizar tema líder e iniciar MVP com metas de ROI.",
+        "Planejar integrações com agenda/faturamento e piloto pago.",
+        "Definir pricing e contrato de valor (SaaS).",
+    ],
+  };
+}
+
 /* ===================== Componente ===================== */
 
 export default function ExportPDFButton({ kpi, answers }: Props) {
@@ -646,6 +694,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         "Respostas detalhadas",
         "Comentários",
         "Identificação (opcional)",
+        "Plano de ação recomendado", // <— adicionado ao sumário
       ];
       const summaryTitleH = 16;
       const summaryListH = tocItems.length * LINE;
@@ -716,6 +765,38 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         doc.circle(marginX + PAD_X, by - 3, 2, "F");
         doc.text(line, marginX + PAD_X + 10, by, { maxWidth: maxW - 10 });
         by += LINE;
+      });
+
+      /* ========= (NOVO) CARTÃO: Plano de ação recomendado (ainda na página 1) ========= */
+      const plan = getConfidencePlan(kpi.total);
+      const planTitleH = 14;
+      const planBulletsH = plan.bullets.length * LINE;
+      const planPadBottom = 24;
+      const planCardH = TITLE_GAP + planTitleH + 8 + planBulletsH + planPadBottom;
+
+      let planTop = reTop + reCardH + gapBetweenCards;
+      if (planTop + planCardH > pageH - 60) {
+        planTop = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      }
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, planTop, CARD_W, planCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(14);
+      doc.text(`Plano de ação recomendado — ${plan.label}`, marginX + PAD_X, planTop + TITLE_GAP);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(12);
+
+      let py = planTop + TITLE_GAP + planTitleH + 8;
+      plan.bullets.forEach((line) => {
+        doc.circle(marginX + PAD_X, py - 3, 2, "F");
+        doc.text(line, marginX + PAD_X + 10, py, { maxWidth: maxW - 10 });
+        py += LINE;
       });
 
       /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3 compacta) ========= */
@@ -904,6 +985,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         });
       }
 
+      // salvar
       const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
       doc.save(fileName);
     } finally {
