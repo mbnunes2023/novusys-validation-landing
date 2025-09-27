@@ -447,19 +447,19 @@ function pillTone(text: string) {
 }
 
 function drawPill(doc: jsPDF, x: number, y: number, text: string) {
-  const padX = 6;
+  const padX = 7;
   const tone = pillTone(text);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
+  doc.setFontSize(10.5);
   const w = doc.getTextWidth(text) + padX * 2;
-  const h = 18;
+  const h = 20; // +2px para respirar melhor
 
   doc.setDrawColor(tone.stroke as any);
   doc.setFillColor(tone.fill as any);
   doc.roundedRect(x, y, w, h, 9, 9, "FD");
 
   doc.setTextColor(tone.text as any);
-  doc.text(text, x + padX, y + 12);
+  doc.text(text, x + padX, y + 13);
   return { width: w, height: h };
 }
 
@@ -472,36 +472,51 @@ function renderDetailedAsCards(
   title: string,
   logoDataUrl?: string | null
 ) {
+  // Layout
   const COLS = answers.length >= 8 ? 4 : 2;
-  const gap = answers.length >= 8 ? 12 : 18;
-  const colW = (pageW - marginX * 2 - gap * (COLS - 1)) / COLS;
-  const MIN_CARD_H = 280; // altura fixa mínima p/ alinhamento
+  const GAP_X = answers.length >= 8 ? 14 : 20;   // espaço entre colunas
+  const colW = (pageW - marginX * 2 - GAP_X * (COLS - 1)) / COLS;
+
+  // Respiro vertical
+  const MIN_CARD_H = 300;         // mais alto p/ não "amontoar"
+  const TITLE_TO_ID = 12;         // distância do título para identificação
+  const SECTION_TITLE_GAP = 10;   // espaço do título de seção para chips
+  const BETWEEN_SECTIONS = 14;    // espaço entre blocos (No-show/Glosas/Rx)
+  const BETWEEN_ROWS = 12;        // espaço antes do comentário
 
   let startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(14);
   doc.text("Respostas detalhadas (cartões)", marginX, startY + 2);
-  let y = startY + 14;
-
-  const lineH = 16;
+  let y = startY + 16;
 
   answers.forEach((a, idx) => {
     const col = idx % COLS;
-    const x = marginX + col * (colW + gap);
+    const x = marginX + col * (colW + GAP_X);
 
-    // Comentário (prepara altura)
+    // Pré-cálculo do comentário para estimar altura
     const commentRaw = (a.comments || "").toString().trim();
     const comment = commentRaw ? commentRaw : "";
+    const lineH = 16;
     const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
     const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
 
-    const baseH = 22 /* título */ + 8 + 3 * 26 /* blocos */ + (comment ? 16 : 0) + commentH + 14;
-    let cardH = Math.max(baseH, MIN_CARD_H);
+    // altura base dos blocos (3 seções + título + identificação opcional)
+    let estH = 22 /* título */ + TITLE_TO_ID +
+               // No-show
+               12 + SECTION_TITLE_GAP + 22 + BETWEEN_SECTIONS +
+               // Glosas
+               12 + SECTION_TITLE_GAP + 22 + BETWEEN_SECTIONS +
+               // Receitas
+               12 + SECTION_TITLE_GAP + 22 +
+               (comment ? BETWEEN_ROWS + 14 + commentH : 0) + 16;
 
-    // Quebra de página se não couber
+    let cardH = Math.max(MIN_CARD_H, estH);
+
+    // quebra de página se necessário
     if (y + cardH > pageH - 60) {
-      y = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 14;
+      y = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 16;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(14);
@@ -513,83 +528,85 @@ function renderDetailedAsCards(
     doc.setFillColor("#ffffff");
     doc.roundedRect(x, y, colW, cardH, 12, 12, "FD");
 
-    // Cabeçalho do card
+    // Cabeçalho
     const code = `R-${String(idx + 1).padStart(2, "0")}`;
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
-    doc.setFontSize(11.5);
+    doc.setFontSize(12);
     doc.text(`Resposta ${code}`, x + 12, y + 20);
 
-    // Linha de identificação (somente com consentimento)
     const consent = !!(a.consent_contact || a.consent);
+    let cursorY = y + 20 + TITLE_TO_ID;
     if (consent) {
       const idLine = [safeText(a.doctor_name), safeText(a.crm), safeText(a.contact)]
-        .filter((t) => t && t !== "Não informado")
-        .join(" • ");
+        .filter((t) => t && t !== "Não informado").join(" • ");
       if (idLine) {
         doc.setFont("helvetica", "normal");
         doc.setTextColor(INK_SOFT);
-        doc.setFontSize(9.5);
-        doc.text(idLine, x + 12, y + 34, { maxWidth: colW - 24 });
+        doc.setFontSize(9.8);
+        doc.text(idLine, x + 12, cursorY, { maxWidth: colW - 24 });
+        cursorY += 14;
       }
     }
 
-    let rowY = y + (consent ? 44 : 36);
-
-    // ---------- Bloco: No-show ----------
+    // --------- Seção: No-show ---------
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(INK); // evita preto puro
-    doc.setFontSize(10.5);
-    doc.text("No-show", x + 12, rowY);
-    rowY += 4;
+    doc.setTextColor(INK);
+    doc.setFontSize(11);
+    doc.text("No-show", x + 12, cursorY + 12);
+    let rowY = cursorY + 12 + SECTION_TITLE_GAP;
     let px = x + 12;
-    px += drawPill(doc, px, rowY, safeText(a.q_noshow_relevance)).width + 6;
-    px += drawPill(doc, px, rowY, safeText(a.q_noshow_has_system)).width + 6;
+    px += drawPill(doc, px, rowY, safeText(a.q_noshow_relevance)).width + 8;
+    px += drawPill(doc, px, rowY, safeText(a.q_noshow_has_system)).width + 8;
     drawPill(doc, px, rowY, safeText(a.q_noshow_financial_impact));
-    rowY += 26;
+    cursorY = rowY + 22 + BETWEEN_SECTIONS;
 
-    // ---------- Bloco: Glosas ----------
-    doc.text("Glosas", x + 12, rowY);
-    rowY += 4;
+    // --------- Seção: Glosas ---------
+    doc.text("Glosas", x + 12, cursorY);
+    rowY = cursorY + SECTION_TITLE_GAP;
     px = x + 12;
-    px += drawPill(doc, px, rowY, safeText(a.q_glosa_is_problem)).width + 6;
-    px += drawPill(doc, px, rowY, safeText(a.q_glosa_interest)).width + 6;
+    px += drawPill(doc, px, rowY, safeText(a.q_glosa_is_problem)).width + 8;
+    px += drawPill(doc, px, rowY, safeText(a.q_glosa_interest)).width + 8;
     drawPill(doc, px, rowY, safeText(a.q_glosa_who_suffers));
-    rowY += 26;
+    cursorY = rowY + 22 + BETWEEN_SECTIONS;
 
-    // ---------- Bloco: Receitas digitais ----------
-    doc.text("Receitas digitais", x + 12, rowY);
-    rowY += 4;
+    // --------- Seção: Receitas digitais ---------
+    doc.text("Receitas digitais", x + 12, cursorY);
+    rowY = cursorY + SECTION_TITLE_GAP;
     px = x + 12;
-    px += drawPill(doc, px, rowY, safeText(a.q_rx_rework)).width + 6;
-    px += drawPill(doc, px, rowY, safeText(a.q_rx_elderly_difficulty)).width + 6;
+    px += drawPill(doc, px, rowY, safeText(a.q_rx_rework)).width + 8;
+    px += drawPill(doc, px, rowY, safeText(a.q_rx_elderly_difficulty)).width + 8;
     drawPill(doc, px, rowY, safeText(a.q_rx_tool_value));
-    rowY += 26;
+    cursorY = rowY + 22;
 
-    // Comentário
+    // Comentário (opcional)
     if (commentLines.length) {
+      cursorY += BETWEEN_ROWS;
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
-      doc.setFontSize(10.5);
-      doc.text("Comentário (resumo)", x + 12, rowY);
-      rowY += 14;
+      doc.setFontSize(11);
+      doc.text("Comentário (resumo)", x + 12, cursorY + 12);
+      cursorY += 16;
 
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
       doc.setFontSize(10.5);
-      doc.text(commentLines, x + 12, rowY);
-      rowY += commentH;
+      doc.text(commentLines, x + 12, cursorY);
+      cursorY += commentH;
     }
 
-    // Ajuste de altura final, se necessário
-    rowY += 10;
-    const usedH = rowY - y;
-    if (usedH + 8 > cardH) cardH = usedH + 8;
-
-    // Próxima posição (nova linha a cada COLS cartões)
-    if (col === COLS - 1) {
-      y += cardH + 10;
+    // Ajuste real de altura se estourou
+    const usedH = cursorY + 16 - y;
+    if (usedH > cardH) {
+      cardH = usedH;
+      // redesenha borda do card com altura nova
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(x, y, colW, cardH, 12, 12);
     }
+
+    // Próxima linha quando completar a linha de colunas
+    if (col === COLS - 1) y += cardH + 14;
   });
 }
 
