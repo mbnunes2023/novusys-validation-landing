@@ -195,6 +195,7 @@ function newPage(
 
 /* ===================== Primitivos ===================== */
 
+// Badge com texto centralizado verticalmente
 function drawBadge(
   doc: jsPDF,
   text: string,
@@ -204,27 +205,21 @@ function drawBadge(
   padX = 8,
   padY = 6
 ) {
-  // use o tamanho de fonte atual
-  const fs = doc.getFontSize();       // ex.: 10
+  const fs = doc.getFontSize();
   const h = Math.max(20, fs + padY * 2);
   const w = doc.getTextWidth(text) + padX * 2;
 
-  // pill
   doc.setFillColor(fill);
   doc.setDrawColor(fill);
   doc.roundedRect(x, y, w, h, 10, 10, "F");
 
-  // texto centralizado verticalmente
-  // 0.35*fs aproxima a distância da linha-base ao centro óptico da fonte Helvetica
-  const yText = y + h / 2 + fs * 0.35;
-
+  const yText = y + h / 2 + fs * 0.35; // centralização ótica
   doc.setFont("helvetica", "bold");
   doc.setTextColor("#ffffff");
   doc.text(text, x + padX, yText);
 
   return { w, h };
 }
-
 
 function bulletLines(
   doc: jsPDF,
@@ -508,6 +503,16 @@ const SECTIONS: Record<
   },
 };
 
+// helper: distribui larguras para ocupar 100% do tableW
+function spreadColumnWidths(totalW: number, ratios: number[]) {
+  const sum = ratios.reduce((s, r) => s + r, 0);
+  const widths = ratios.map((r) => Math.floor((r / sum) * totalW));
+  // ajuste do arredondamento
+  const diff = totalW - widths.reduce((s, w) => s + w, 0);
+  if (diff !== 0) widths[widths.length - 1] += diff;
+  return widths;
+}
+
 function renderSectionTable(
   doc: jsPDF,
   section: (typeof SECTIONS)[SectionKey],
@@ -539,6 +544,11 @@ function renderSectionTable(
   const HEADER_GAP = 28;
   const topY = 14 + 72 + 12 + HEADER_GAP + TOP_GAP;
 
+  // largura total alinhada ao cabeçalho
+  const tableW = pageW - marginX * 2;
+  // proporções entre as colunas [pergunta, opcao, qtde, pct]
+  const [wPerg, wOpc, wQtde, wPct] = spreadColumnWidths(tableW, [3.5, 3, 0.8, 1.2]);
+
   autoTable(doc as any, {
     startY: topY,
     styles: {
@@ -557,12 +567,12 @@ function renderSectionTable(
       { header: "% (entre respondentes)", dataKey: "pct" },
     ],
     columnStyles: {
-      pergunta: { cellWidth: 260, overflow: "linebreak" },
-      opcao: { cellWidth: 220, overflow: "linebreak" },
-      qtde: { cellWidth: 60, halign: "right" },
-      pct: { cellWidth: 160, halign: "right" },
+      pergunta: { cellWidth: wPerg, overflow: "linebreak" },
+      opcao: { cellWidth: wOpc, overflow: "linebreak" },
+      qtde: { cellWidth: wQtde, halign: "right" },
+      pct: { cellWidth: wPct, halign: "right" },
     },
-    tableWidth: pageW - marginX * 2,
+    tableWidth: tableW,
     margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
     theme: "grid",
     rowPageBreak: "auto",
@@ -580,7 +590,7 @@ function renderSectionTable(
   return (doc as any).lastAutoTable.finalY;
 }
 
-/* ===================== Respostas detalhadas ===================== */
+/* ===================== Respostas detalhadas (cards) ===================== */
 
 function drawPill(doc: jsPDF, x: number, y: number, text: string) {
   const padX = 6;
@@ -611,8 +621,11 @@ function renderDetailedAsCards(
   title: string,
   logoDataUrl?: string | null
 ) {
-  const gap = 18;
-  const colW = (pageW - marginX * 2 - gap) / 2;
+  // ----- NOVO: 4 cartões por linha quando houver bastante resposta -----
+  const COLS = answers.length >= 8 ? 4 : 2;
+  const gap = answers.length >= 8 ? 12 : 18;
+  const colW = (pageW - marginX * 2 - gap * (COLS - 1)) / COLS;
+
   let startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
@@ -623,7 +636,7 @@ function renderDetailedAsCards(
   const lineH = 16;
 
   answers.forEach((a, idx) => {
-    const col = idx % 2;
+    const col = idx % COLS;
     const x = marginX + col * (colW + gap);
 
     const commentRaw = (a.comments || "").toString().trim();
@@ -631,7 +644,7 @@ function renderDetailedAsCards(
     const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
     const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
 
-    const baseH = 24 + 8 + 3 * 28 + (comment ? 18 : 0) + commentH + 18;
+    const baseH = 22 + 8 + 3 * 26 + (comment ? 16 : 0) + commentH + 14; // compacto
     let cardH = baseH;
 
     if (y + cardH > pageH - 60) {
@@ -649,8 +662,8 @@ function renderDetailedAsCards(
     const code = `R-${String(idx + 1).padStart(2, "0")}`;
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
-    doc.setFontSize(12);
-    doc.text(`Resposta ${code}`, x + 14, y + 22);
+    doc.setFontSize(11.5);
+    doc.text(`Resposta R-${code.split("-")[1]}`, x + 12, y + 20);
 
     const consent = !!(a.consent_contact || a.consent);
     if (consent) {
@@ -660,65 +673,62 @@ function renderDetailedAsCards(
       if (idLine) {
         doc.setFont("helvetica", "normal");
         doc.setTextColor(INK_SOFT);
-        doc.setFontSize(10);
-        doc.text(idLine, x + 14, y + 38, { maxWidth: colW - 28 });
+        doc.setFontSize(9.5);
+        doc.text(idLine, x + 12, y + 34, { maxWidth: colW - 24 });
       }
     }
 
-    let rowY = y + (consent ? 50 : 42);
+    let rowY = y + (consent ? 44 : 36);
 
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
-    doc.setFontSize(11);
-    doc.text("No-show", x + 14, rowY);
+    doc.setFontSize(10.5);
+    doc.text("No-show", x + 12, rowY);
     rowY += 4;
-    let px = x + 14;
-    px += drawPill(doc, px, rowY, safeText(a.q_noshow_relevance)).width + 8;
-    px += drawPill(doc, px, rowY, safeText(a.q_noshow_has_system)).width + 8;
+    let px = x + 12;
+    px += drawPill(doc, px, rowY, safeText(a.q_noshow_relevance)).width + 6;
+    px += drawPill(doc, px, rowY, safeText(a.q_noshow_has_system)).width + 6;
     drawPill(doc, px, rowY, safeText(a.q_noshow_financial_impact));
-    rowY += 28;
+    rowY += 26;
 
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(INK);
-    doc.setFontSize(11);
-    doc.text("Glosas", x + 14, rowY);
+    doc.text("Glosas", x + 12, rowY);
     rowY += 4;
-    px = x + 14;
-    px += drawPill(doc, px, rowY, safeText(a.q_glosa_is_problem)).width + 8;
-    px += drawPill(doc, px, rowY, safeText(a.q_glosa_interest)).width + 8;
+    px = x + 12;
+    px += drawPill(doc, px, rowY, safeText(a.q_glosa_is_problem)).width + 6;
+    px += drawPill(doc, px, rowY, safeText(a.q_glosa_interest)).width + 6;
     drawPill(doc, px, rowY, safeText(a.q_glosa_who_suffers));
-    rowY += 28;
+    rowY += 26;
 
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(INK);
-    doc.setFontSize(11);
-    doc.text("Receitas digitais", x + 14, rowY);
+    doc.text("Receitas digitais", x + 12, rowY);
     rowY += 4;
-    px = x + 14;
-    px += drawPill(doc, px, rowY, safeText(a.q_rx_rework)).width + 8;
-    px += drawPill(doc, px, rowY, safeText(a.q_rx_elderly_difficulty)).width + 8;
+    px = x + 12;
+    px += drawPill(doc, px, rowY, safeText(a.q_rx_rework)).width + 6;
+    px += drawPill(doc, px, rowY, safeText(a.q_rx_elderly_difficulty)).width + 6;
     drawPill(doc, px, rowY, safeText(a.q_rx_tool_value));
-    rowY += 28;
+    rowY += 26;
 
     if (commentLines.length) {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
-      doc.setFontSize(11);
-      doc.text("Comentário (resumo)", x + 14, rowY);
-      rowY += 16;
+      doc.setFontSize(10.5);
+      doc.text("Comentário (resumo)", x + 12, rowY);
+      rowY += 14;
 
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
-      doc.setFontSize(11);
-      doc.text(commentLines, x + 14, rowY);
+      doc.setFontSize(10.5);
+      doc.text(commentLines, x + 12, rowY);
       rowY += commentH;
     }
 
-    rowY += 12;
+    rowY += 10;
     const usedH = rowY - y;
-    if (usedH + 10 > cardH) cardH = usedH + 10;
+    if (usedH + 8 > cardH) cardH = usedH + 8;
 
-    if (col === 1) y += cardH + 12;
+    // próxima coluna / próxima linha
+    if (col === COLS - 1) {
+      y += cardH + 10;
+    }
   });
 }
 
@@ -763,6 +773,9 @@ function renderDetailedAsTables(
   const topY = 14 + 72 + 12 + headerGap + TOP_GAP;
 
   sections.forEach((sec, idx) => {
+    const tableW = pageW - marginX * 2;
+    const [wResp, wA, wB, wC] = spreadColumnWidths(tableW, [0.8, 2.2, 2.2, 2.4]);
+
     autoTable(doc as any, {
       startY: idx === 0 ? topY : (doc as any).lastAutoTable.finalY + 26,
       styles: {
@@ -781,12 +794,12 @@ function renderDetailedAsTables(
         { header: sec.heads[2], dataKey: "c" },
       ],
       columnStyles: {
-        resp: { cellWidth: 90 },
-        a: { cellWidth: 220, overflow: "linebreak" },
-        b: { cellWidth: 220, overflow: "linebreak" },
-        c: { cellWidth: 240, overflow: "linebreak" },
+        resp: { cellWidth: wResp },
+        a: { cellWidth: wA, overflow: "linebreak" },
+        b: { cellWidth: wB, overflow: "linebreak" },
+        c: { cellWidth: wC, overflow: "linebreak" },
       },
-      tableWidth: pageW - marginX * 2,
+      tableWidth: tableW,
       margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
       theme: "grid",
       rowPageBreak: "auto",
@@ -867,12 +880,13 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(13);
-      const titleY = bannerTop + bannerPadTop; // baseline do título
+      const titleY = bannerTop + bannerPadTop;
       doc.text("Sinal de Mercado + Próximos Passos", marginX + padX, titleY);
 
       const verdict = `Veredito geral: ${sig.overall.label}`;
       const badgeX = marginX + CARD_W - padX - (doc.getTextWidth(verdict) + 16);
-      const badgeY = titleY - 13; // drawBadge escreve texto em y+13 -> baseline igual ao título
+      // drawBadge centraliza vertical internamente; alinhar pela linha do título:
+      const badgeY = titleY - 13;
       drawBadge(doc, verdict, badgeX, badgeY, sig.overall.color);
 
       // lista de temas (começa após o título)
@@ -1175,6 +1189,9 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
         const topY = infoY + 28;
 
+        const tableW = pageW - marginX * 2;
+        const [wResp, wNome, wCrm, wContato] = spreadColumnWidths(tableW, [0.7, 2.3, 1, 3]);
+
         autoTable(doc as any, {
           startY: topY,
           styles: {
@@ -1192,7 +1209,13 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
             { header: "CRM", dataKey: "crm" },
             { header: "Contato (e-mail / WhatsApp)", dataKey: "contato" },
           ],
-          tableWidth: pageW - marginX * 2,
+          columnStyles: {
+            resp: { cellWidth: wResp },
+            nome: { cellWidth: wNome, overflow: "linebreak" },
+            crm: { cellWidth: wCrm },
+            contato: { cellWidth: wContato, overflow: "linebreak" },
+          },
+          tableWidth: tableW,
           margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
           theme: "grid",
           rowPageBreak: "auto",
