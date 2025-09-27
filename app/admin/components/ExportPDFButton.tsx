@@ -757,7 +757,7 @@ function renderDetailedAsCards(
       doc.setTextColor(INK);
       doc.setFontSize(11);
       doc.text("Comentário (resumo)", x + 12, cursorY + 12);
-      cursorY += 16;
+      cursorY += 25;
 
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
