@@ -39,33 +39,35 @@ const CARD_EDGE = "#e9edf7";
 
 // Sinais de mercado (cores)
 export const SIGNAL_COLORS = {
-  strong: "#10b981",      // verde
-  moderate: "#f59e0b",    // amarelo
-  weak: "#94a3b8",        // cinza ardósia
-  inconclusive: "#3b82f6" // azul
+  strong: "#10b981",
+  moderate: "#f59e0b",
+  weak: "#94a3b8",
+  inconclusive: "#3b82f6",
 } as const;
 
 type SignalKey = keyof typeof SIGNAL_COLORS;
 
 // Limiar(es) configuráveis
 export const THRESHOLDS = {
-  strong: 60,                // >= forte
-  moderate: 40,              // >= moderado
-  weak: 25,                  // >= fraco
+  strong: 60,
+  moderate: 40,
+  weak: 25,
 
   // guard-rails de amostra
-  minSampleModerate: 8,      // com N < 8, "moderado" vira fraco
-  minSampleStrong: 12,       // com N < 12, "forte" vira moderado
+  minSampleModerate: 8,
+  minSampleStrong: 12,
 
   // overrides por tema (opcional)
   byTheme: {
-    "no-show":   { strong: 55, moderate: 35 },
-    "glosas":    { strong: 60, moderate: 40 },
-    "receitas":  { strong: 60, moderate: 40 },
-  } as Partial<Record<"no-show" | "glosas" | "receitas", { strong: number; moderate: number }>>,
+    "no-show": { strong: 55, moderate: 35 },
+    glosas: { strong: 60, moderate: 40 },
+    receitas: { strong: 60, moderate: 40 },
+  } as Partial<
+    Record<"no-show" | "glosas" | "receitas", { strong: number; moderate: number }>
+  >,
 };
 
-// Página 1: espaçamentos enxutos e consistentes
+// Página 1: espaçamentos
 const P1_LINE = 18;
 const P1_GUTTER = 18;
 const P1_CARD_PAD_X = 16;
@@ -75,7 +77,10 @@ const P1_CARD_PAD_Y = 16;
 
 function formatNow(): string {
   const d = new Date();
-  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(d);
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(d);
 }
 
 async function fetchAsDataURL(path: string): Promise<string | null> {
@@ -93,7 +98,7 @@ async function fetchAsDataURL(path: string): Promise<string | null> {
   }
 }
 
-/* ===================== Cabeçalho/Rodapé (mantidos) ===================== */
+/* ===================== Cabeçalho/Rodapé ===================== */
 
 const TOP_GAP = 24;
 
@@ -168,15 +173,27 @@ function drawFooter(doc: jsPDF, pageW: number, pageH: number, marginX: number) {
 
 function newPage(
   doc: jsPDF,
-  opts: { title: string; marginX: number; pageW: number; pageH: number; logoDataUrl?: string | null }
+  opts: {
+    title: string;
+    marginX: number;
+    pageW: number;
+    pageH: number;
+    logoDataUrl?: string | null;
+  }
 ) {
   doc.addPage();
-  const startY = drawHeader(doc, opts.pageW, opts.marginX, opts.title, opts.logoDataUrl);
+  const startY = drawHeader(
+    doc,
+    opts.pageW,
+    opts.marginX,
+    opts.title,
+    opts.logoDataUrl
+  );
   drawFooter(doc, opts.pageW, opts.pageH, opts.marginX);
   return startY;
 }
 
-/* ===================== Primitivos de desenho ===================== */
+/* ===================== Primitivos ===================== */
 
 function drawBadge(doc: jsPDF, text: string, x: number, y: number, fill = "#000") {
   const padX = 8;
@@ -200,21 +217,20 @@ function bulletLines(
   maxWidth: number,
   lineH = 16
 ) {
-  // bullets com alinhamento mesmo quando quebra
   doc.setFont("helvetica", "normal");
   doc.setTextColor(INK);
   doc.setFontSize(11);
   let y = startY + 12;
 
   lines.forEach((line) => {
-    const chunks = doc.splitTextToSize(line, maxWidth - 16); // reserva 16px para o bullet
-    doc.circle(x, y - 3, 1.8, "F"); // bullet na 1ª linha
+    const chunks = doc.splitTextToSize(line, maxWidth - 16);
+    doc.circle(x, y - 3, 1.8, "F");
     doc.text(chunks[0], x + 8, y);
     for (let i = 1; i < chunks.length; i++) {
       y += lineH;
       doc.text(chunks[i], x + 8, y);
     }
-    y += lineH; // espaço entre itens
+    y += lineH;
   });
   return y;
 }
@@ -232,11 +248,8 @@ function classifySignalWithThresholds(
   const WEAK = THRESHOLDS.weak;
 
   let key: SignalKey =
-    pct >= STRONG ? "strong" :
-    pct >= MODERATE ? "moderate" :
-    pct >= WEAK ? "weak" : "weak";
+    pct >= STRONG ? "strong" : pct >= MODERATE ? "moderate" : pct >= WEAK ? "weak" : "weak";
 
-  // guard-rails por N
   if (n < THRESHOLDS.minSampleStrong && key === "strong") key = "moderate";
   if (n < THRESHOLDS.minSampleModerate && key === "moderate") key = "weak";
   if (n < 5) key = "inconclusive";
@@ -254,10 +267,10 @@ function marketSignals(kpi: KPI) {
   const n = kpi.total || 0;
 
   const themes = [
-    { theme: "no-show" as const,  pct: kpi.noshowYesPct },
-    { theme: "glosas"  as const,  pct: kpi.glosaRecorrentePct },
+    { theme: "no-show" as const, pct: kpi.noshowYesPct },
+    { theme: "glosas" as const, pct: kpi.glosaRecorrentePct },
     { theme: "receitas" as const, pct: kpi.rxReworkPct },
-  ].map(t => {
+  ].map((t) => {
     const cls = classifySignalWithThresholds(t.theme, t.pct, n);
     return {
       theme: t.theme,
@@ -268,54 +281,61 @@ function marketSignals(kpi: KPI) {
     };
   });
 
-  const top = [...themes].sort((a,b) => b.pct - a.pct)[0];
+  const top = [...themes].sort((a, b) => b.pct - a.pct)[0];
   let overallKey: SignalKey = top.key;
   if (kpi.total < 5) overallKey = "inconclusive";
 
   const labelMap: Record<SignalKey, string> = {
-    strong: "Forte", moderate: "Moderado", weak: "Fraco", inconclusive: "Inconclusivo"
+    strong: "Forte",
+    moderate: "Moderado",
+    weak: "Fraco",
+    inconclusive: "Inconclusivo",
   };
 
   return {
     themes,
-    overall: { key: overallKey, label: labelMap[overallKey], color: SIGNAL_COLORS[overallKey] }
+    overall: { key: overallKey, label: labelMap[overallKey], color: SIGNAL_COLORS[overallKey] },
   };
 }
 
 type ActionTone = "direto" | "formal" | "vendedor";
 const ACTION_TONE: ActionTone = "direto";
 
-const ACTION_TEXTS: Record<ActionTone, {
-  strong: (t: string)=>string;
-  moderate: (t: string)=>string;
-  weak: (t: string)=>string;
-  inconclusive: (t: string)=>string;
-}> = {
+const ACTION_TEXTS: Record<
+  ActionTone,
+  {
+    strong: (t: string) => string;
+    moderate: (t: string) => string;
+    weak: (t: string) => string;
+    inconclusive: (t: string) => string;
+  }
+> = {
   direto: {
-    strong:   (t)=> `${t}: rodar piloto pago por 4–6 semanas; buscar redução de 20–30%.`,
-    moderate: (t)=> `${t}: 5 entrevistas + protótipo simples; definir métrica e preço.`,
-    weak:     (t)=> `${t}: monitorar; não priorizar agora.`,
-    inconclusive: (t)=> `${t}: coletar mais respostas antes de decidir.`,
+    strong: (t) => `${t}: rodar piloto pago por 4–6 semanas; buscar redução de 20–30%.`,
+    moderate: (t) => `${t}: 5 entrevistas + protótipo simples; definir métrica e preço.`,
+    weak: (t) => `${t}: monitorar; não priorizar agora.`,
+    inconclusive: (t) => `${t}: coletar mais respostas antes de decidir.`,
   },
   formal: {
-    strong:   (t)=> `${t}: conduzir piloto remunerado (4–6 semanas) com meta de redução de 20–30%.`,
-    moderate: (t)=> `${t}: realizar 5 entrevistas e prototipagem; definir métrica de sucesso e precificação.`,
-    weak:     (t)=> `${t}: manter acompanhamento; sem prioridade no momento.`,
-    inconclusive: (t)=> `${t}: ampliar a amostra para suportar decisão.`,
+    strong: (t) =>
+      `${t}: conduzir piloto remunerado (4–6 semanas) com meta de redução de 20–30%.`,
+    moderate: (t) =>
+      `${t}: realizar 5 entrevistas e prototipagem; definir métrica de sucesso e precificação.`,
+    weak: (t) => `${t}: manter acompanhamento; sem prioridade no momento.`,
+    inconclusive: (t) => `${t}: ampliar a amostra para suportar decisão.`,
   },
   vendedor: {
-    strong:   (t)=> `${t}: provar valor em 30 dias — piloto pago e metas claras (20–30%).`,
-    moderate: (t)=> `${t}: falar com 5 clientes e mostrar um demo rápido; alinhar preço.`,
-    weak:     (t)=> `${t}: deixar no radar; agir se o interesse crescer.`,
-    inconclusive: (t)=> `${t}: precisamos de mais respostas para fechar o diagnóstico.`,
-  }
+    strong: (t) => `${t}: provar valor em 30 dias — piloto pago e metas claras (20–30%).`,
+    moderate: (t) => `${t}: falar com 5 clientes e mostrar um demo rápido; alinhar preço.`,
+    weak: (t) => `${t}: deixar no radar; agir se o interesse crescer.`,
+    inconclusive: (t) => `${t}: precisamos de mais respostas para fechar o diagnóstico.`,
+  },
 };
 
 function actionBulletsFromSignals(sig: ReturnType<typeof marketSignals>): string[] {
   const name = (theme: string) =>
-    theme === "no-show" ? "No-show" :
-    theme === "glosas"  ? "Glosas"  : "Receitas";
-  return sig.themes.map(t => ACTION_TEXTS[ACTION_TONE][t.key](name(t.theme)));
+    theme === "no-show" ? "No-show" : theme === "glosas" ? "Glosas" : "Receitas";
+  return sig.themes.map((t) => ACTION_TEXTS[ACTION_TONE][t.key](name(t.theme)));
 }
 
 /* ===================== KPI Cards / Distribuições ===================== */
@@ -430,23 +450,43 @@ const SECTIONS: Record<
     questions: [
       { key: "q_noshow_relevance", label: "Relevância", options: ["Sim", "Não", "Parcialmente"] },
       { key: "q_noshow_has_system", label: "Possui sistema que resolve", options: ["Sim", "Não"] },
-      { key: "q_noshow_financial_impact", label: "Impacto financeiro mensal", options: ["Baixo impacto", "Médio impacto", "Alto impacto"] },
+      {
+        key: "q_noshow_financial_impact",
+        label: "Impacto financeiro mensal",
+        options: ["Baixo impacto", "Médio impacto", "Alto impacto"],
+      },
     ],
   },
   glosas: {
     title: "Glosas de convênios (Faturamento)",
     questions: [
       { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não", "Às vezes"] },
-      { key: "q_glosa_interest", label: "Interesse em checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
-      { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
+      {
+        key: "q_glosa_interest",
+        label: "Interesse em checagem antes do envio",
+        options: ["Sim", "Não", "Talvez"],
+      },
+      {
+        key: "q_glosa_who_suffers",
+        label: "Quem sofre mais",
+        options: ["Médico", "Administrativo", "Ambos"],
+      },
     ],
   },
   receitas: {
     title: "Receitas digitais e telemedicina",
     questions: [
       { key: "q_rx_rework", label: "Receitas geram retrabalho", options: ["Sim", "Não", "Raramente"] },
-      { key: "q_rx_elderly_difficulty", label: "Pacientes têm dificuldade", options: ["Sim", "Não", "Em parte"] },
-      { key: "q_rx_tool_value", label: "Valor em ferramenta de apoio", options: ["Sim", "Não", "Talvez"] },
+      {
+        key: "q_rx_elderly_difficulty",
+        label: "Pacientes têm dificuldade",
+        options: ["Sim", "Não", "Em parte"],
+      },
+      {
+        key: "q_rx_tool_value",
+        label: "Valor em ferramenta de apoio",
+        options: ["Sim", "Não", "Talvez"],
+      },
     ],
   },
 };
@@ -484,7 +524,13 @@ function renderSectionTable(
 
   autoTable(doc as any, {
     startY: topY,
-    styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+    styles: {
+      font: "helvetica",
+      fontSize: 10,
+      textColor: INK,
+      cellPadding: 6,
+      lineColor: CARD_EDGE,
+    },
     headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
     body: rows.length ? rows : [{ pergunta: "—", opcao: "—", qtde: 0, pct: "0%" }],
     columns: [
@@ -702,7 +748,13 @@ function renderDetailedAsTables(
   sections.forEach((sec, idx) => {
     autoTable(doc as any, {
       startY: idx === 0 ? topY : (doc as any).lastAutoTable.finalY + 26,
-      styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+      styles: {
+        font: "helvetica",
+        fontSize: 10,
+        textColor: INK,
+        cellPadding: 6,
+        lineColor: CARD_EDGE,
+      },
       headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold" },
       body: sec.rows,
       columns: [
@@ -754,20 +806,20 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
-      // --- Banner: Sinal de Mercado + Próximos Passos (reflete o dashboard)
+      // --- Banner: Sinal de Mercado + Próximos Passos
       const sig = marketSignals(kpi);
       const bullets = actionBulletsFromSignals(sig);
 
       const CARD_W = pageW - marginX * 2;
       const bannerTop = startY + 14;
 
-      // >>> ajustes de espaçamento (mais respiro e padrão igual aos cards) <<<
+      // espaçamentos
       const padX = P1_CARD_PAD_X;
-      const bannerPadTop = P1_CARD_PAD_Y + 6;   // título um pouco abaixo da faixa azul
+      const bannerPadTop = P1_CARD_PAD_Y + 6;
       const bannerPadBottom = P1_CARD_PAD_Y;
       const titleH = 16;
-      const subtitleGap = 12;                   // igual aos outros cards
-      const dividerGap = 12;                    // divisor com respiro padrão
+      const subtitleGap = 12;
+      const dividerGap = 12;
       const themeLineH = 14;
 
       // alturas
@@ -775,37 +827,41 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const bulletsH = bullets.length * P1_LINE + 6;
 
       const bannerH =
-        bannerPadTop + titleH + subtitleGap + themeBlockH + dividerGap + 1 + 10 + bulletsH + bannerPadBottom;
+        bannerPadTop +
+        titleH +
+        subtitleGap +
+        themeBlockH +
+        dividerGap +
+        1 +
+        10 +
+        bulletsH +
+        bannerPadBottom;
 
       // card
       doc.setDrawColor(CARD_EDGE);
       doc.setFillColor("#ffffff");
       doc.roundedRect(marginX, bannerTop, CARD_W, bannerH, 12, 12, "FD");
 
-      // faixa com cor do veredito geral
+      // faixa do veredito
       doc.setFillColor(sig.overall.color);
       doc.roundedRect(marginX, bannerTop, CARD_W, 8, 12, 12, "F");
 
-      // título (agora mais abaixo da faixa)
+      // ===== Alinhamento título/badge =====
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(13);
-      doc.text("Sinal de Mercado + Próximos Passos", marginX + padX, bannerTop + bannerPadTop);
+      const titleY = bannerTop + bannerPadTop; // baseline do título
+      doc.text("Sinal de Mercado + Próximos Passos", marginX + padX, titleY);
 
-      // badge veredito geral (alinha ao novo topo)
       const verdict = `Veredito geral: ${sig.overall.label}`;
-      drawBadge(
-        doc,
-        verdict,
-        marginX + CARD_W - padX - (doc.getTextWidth(verdict) + 16),
-        bannerTop + bannerPadTop - 6,
-        sig.overall.color
-      );
+      const badgeX = marginX + CARD_W - padX - (doc.getTextWidth(verdict) + 16);
+      const badgeY = titleY - 13; // drawBadge escreve texto em y+13 -> baseline igual ao título
+      drawBadge(doc, verdict, badgeX, badgeY, sig.overall.color);
 
-      // 3 linhas com % por tema (espelha o dashboard) — começam APÓS o título
+      // lista de temas (começa após o título)
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      let yThemes = bannerTop + bannerPadTop + titleH + subtitleGap;
+      let yThemes = titleY + titleH + subtitleGap;
       sig.themes.forEach((t) => {
         const name = t.theme === "no-show" ? "No-show" : t.theme === "glosas" ? "Glosas" : "Receitas";
         const line = `${name}: ${Math.round(t.pct)}% — ${t.label}`;
@@ -816,13 +872,13 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         yThemes += themeLineH;
       });
 
-      // divisor com o mesmo respiro dos cards
+      // divisor
       const dividerY = yThemes + dividerGap;
       doc.setDrawColor(CARD_EDGE);
       doc.setLineWidth(0.8);
       doc.line(marginX + padX, dividerY, marginX + CARD_W - padX, dividerY);
 
-      // bullets (com espaçamento padrão)
+      // bullets
       bulletLines(doc, bullets, marginX + padX, dividerY + 10, CARD_W - padX * 2, P1_LINE);
 
       // --- Sumário + Resumo (mesma altura)
@@ -837,7 +893,9 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       ];
       const resumoBullets = [
         `Amostra: ${kpi.total} respostas.`,
-        `Impacto: no-show ${kpi.noshowYesPct.toFixed(0)}%, glosas ${kpi.glosaRecorrentePct.toFixed(0)}%, receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
+        `Impacto: no-show ${kpi.noshowYesPct.toFixed(0)}%, glosas ${kpi.glosaRecorrentePct.toFixed(
+          0
+        )}%, receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
         "Recomendação: piloto em no-show e glosas; fluxo assistido para receitas.",
       ];
 
@@ -873,7 +931,11 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(13);
-      doc.text("Resumo Executivo — Principais insights", resumoX + P1_CARD_PAD_X, rowTop + P1_CARD_PAD_Y);
+      doc.text(
+        "Resumo Executivo — Principais insights",
+        resumoX + P1_CARD_PAD_X,
+        rowTop + P1_CARD_PAD_Y
+      );
       bulletLines(
         doc,
         resumoBullets,
@@ -883,7 +945,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         P1_LINE
       );
 
-      /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3) ========= */
+      /* ========= PÁGINA 2 ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const gap = 16;
@@ -897,16 +959,53 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.text("Visão Geral", marginX, kpiY + 2);
       kpiY += 14;
 
-      drawKpiCard(doc, marginX + 0 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "Total de respostas", `${kpi.total}`, ACCENT);
-      drawKpiCard(doc, marginX + 1 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
-      drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
-      drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
+      drawKpiCard(
+        doc,
+        marginX + 0 * (kpiCardW + gap),
+        kpiY,
+        kpiCardW,
+        kpiCardH,
+        "Total de respostas",
+        `${kpi.total}`,
+        ACCENT
+      );
+      drawKpiCard(
+        doc,
+        marginX + 1 * (kpiCardW + gap),
+        kpiY,
+        kpiCardW,
+        kpiCardH,
+        "% no-show relevante",
+        `${kpi.noshowYesPct.toFixed(0)}%`
+      );
+      drawKpiCard(
+        doc,
+        marginX + 2 * (kpiCardW + gap),
+        kpiY,
+        kpiCardW,
+        kpiCardH,
+        "% glosas recorrentes",
+        `${kpi.glosaRecorrentePct.toFixed(0)}%`
+      );
+      drawKpiCard(
+        doc,
+        marginX + 3 * (kpiCardW + gap),
+        kpiY,
+        kpiCardW,
+        kpiCardH,
+        "% receitas geram retrabalho",
+        `${kpi.rxReworkPct.toFixed(0)}%`
+      );
 
       let gridTop = kpiY + kpiCardH + 24;
 
       const nsRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items;
       const nsSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items;
-      const nsImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]).items;
+      const nsImpact = dist(answers, "q_noshow_financial_impact", [
+        "Baixo impacto",
+        "Médio impacto",
+        "Alto impacto",
+      ]).items;
 
       const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items;
       const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items;
@@ -962,7 +1061,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       drawFooter(doc, pageW, pageH, marginX);
 
-      /* ========= PÁGINAS 3–5: Consolidado por TEMA ========= */
+      /* ========= PÁGINAS 3–5 ========= */
       for (const key of ["noshow", "glosas", "receitas"] as SectionKey[]) {
         doc.addPage();
         renderSectionTable(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
@@ -977,7 +1076,10 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       /* ========= COMENTÁRIOS ========= */
       const comments: Array<{ code: string; text: string }> = answers
-        .map((a, i) => ({ code: `R-${String(i + 1).padStart(2, "0")}`, text: (a.comments || "").toString().trim() }))
+        .map((a, i) => ({
+          code: `R-${String(i + 1).padStart(2, "0")}`,
+          text: (a.comments || "").toString().trim(),
+        }))
         .filter((c) => c.text.length > 0);
 
       if (comments.length) {
@@ -987,7 +1089,11 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         doc.setFont("helvetica", "bold");
         doc.setTextColor(INK);
         doc.setFontSize(14);
-        doc.text("Comentários (texto livre) — referência por código da resposta", marginX, sY + 18);
+        doc.text(
+          "Comentários (texto livre) — referência por código da resposta",
+          marginX,
+          sY + 18
+        );
 
         doc.setFont("helvetica", "normal");
         doc.setTextColor(INK);
@@ -1020,7 +1126,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         drawFooter(doc, pageW, pageH, marginX);
       }
 
-      /* ========= IDENTIFICAÇÃO (consentida) ========= */
+      /* ========= IDENTIFICAÇÃO ========= */
       const idRows = answers
         .filter((a) => a.consent_contact === true || a.consent === true)
         .map((a, i) => ({
@@ -1054,7 +1160,13 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
         autoTable(doc as any, {
           startY: topY,
-          styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
+          styles: {
+            font: "helvetica",
+            fontSize: 10,
+            textColor: INK,
+            cellPadding: 6,
+            lineColor: CARD_EDGE,
+          },
           headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
           body: idRows,
           columns: [
@@ -1075,7 +1187,9 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       }
 
       // salvar
-      const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
+      const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(
+        new Date()
+      )}.pdf`;
       doc.save(fileName);
     } finally {
       setLoading(false);
