@@ -20,7 +20,7 @@ type Answer = Record<string, any>;
 
 type Props = {
   kpi: KPI;
-  summaryRows?: Array<Record<string, number | string>>; // mantido p/ compatibilidade
+  summaryRows?: Array<Record<string, number | string>>;
   answers: Answer[];
   chartRefs?: {
     noshowRef: React.RefObject<HTMLDivElement>;
@@ -36,6 +36,16 @@ const ACCENT = "#2575fc";
 const INK = "#0f172a";
 const INK_SOFT = "#64748b";
 const CARD_EDGE = "#e9edf7";
+
+/* Severidade (cores acessíveis) */
+const SEV_COLORS = {
+  low: "#10b981",       // verde
+  moderate: "#f59e0b",  // amarelo
+  high: "#f97316",      // laranja
+  critical: "#ef4444",  // vermelho
+} as const;
+
+type SevKey = keyof typeof SEV_COLORS;
 
 /* ===================== Utils ===================== */
 
@@ -53,7 +63,6 @@ function centeredStartY(startY: number, pageH: number, blockH: number) {
   return startY + offset;
 }
 
-// /public/logo.png -> DataURL
 async function fetchAsDataURL(path: string): Promise<string | null> {
   try {
     const res = await fetch(path);
@@ -71,7 +80,7 @@ async function fetchAsDataURL(path: string): Promise<string | null> {
 
 /* ===================== Cabeçalho/Rodapé (MANTIDOS) ===================== */
 
-const TOP_GAP = 24; // respiro após header
+const TOP_GAP = 24;
 
 function drawHeader(
   doc: jsPDF,
@@ -80,11 +89,9 @@ function drawHeader(
   title: string,
   logoDataUrl?: string | null
 ) {
-  // faixa superior
   doc.setFillColor(BRAND_BLUE);
   doc.rect(0, 0, pageW, 6, "F");
 
-  // card do header
   const headerH = 72;
   const cardX = marginX;
   const cardY = 14;
@@ -95,11 +102,9 @@ function drawHeader(
   doc.setLineWidth(1);
   doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
 
-  // centralização vertical
   const centerY = cardY + headerH / 2;
-
-  // bloco texto (esquerda)
   const leftPad = 18;
+
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(18);
@@ -116,7 +121,6 @@ function drawHeader(
   doc.setFontSize(10);
   doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, titleY + lineGap + 10);
 
-  // logo (direita)
   if (logoDataUrl) {
     const targetW = 170;
     const targetH = 50;
@@ -196,7 +200,21 @@ function bulletLines(
   return y;
 }
 
-/* ===================== KPI Cards ===================== */
+function drawBadge(doc: jsPDF, text: string, x: number, y: number, fill = "#000") {
+  const padX = 8;
+  const h = 20;
+  const w = doc.getTextWidth(text) + padX * 2;
+  doc.setFillColor(fill);
+  doc.setDrawColor(fill);
+  doc.roundedRect(x, y, w, h, 10, 10, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor("#ffffff");
+  doc.text(text, x + padX, y + 13);
+  return { w, h };
+}
+
+/* ===================== KPI Cards / Distribuições ===================== */
 
 function drawKpiCard(
   doc: jsPDF,
@@ -223,8 +241,6 @@ function drawKpiCard(
   doc.setFontSize(30);
   doc.text(value, x + 16, y + 58);
 }
-
-/* ===================== Micro-charts ===================== */
 
 type DistItem = { label: string; count: number; pct: string };
 
@@ -298,7 +314,35 @@ function drawBarBlockCompact(
   return y + nonEmpty.length * (CROW_H + CROW_GAP);
 }
 
-/* ===================== Consolidado por tema ===================== */
+/* ===================== Severidade (nível e cor) ===================== */
+
+function computeSeverity(kpi: KPI): { key: SevKey; label: string; color: string; driver: string } {
+  const worstVal = Math.max(kpi.noshowYesPct, kpi.glosaRecorrentePct, kpi.rxReworkPct);
+  let key: SevKey = "low";
+  if (worstVal >= 80) key = "critical";
+  else if (worstVal >= 60) key = "high";
+  else if (worstVal >= 35) key = "moderate";
+  else key = "low";
+
+  const labelMap: Record<SevKey, string> = {
+    low: "Baixo",
+    moderate: "Moderado",
+    high: "Alto",
+    critical: "Crítico",
+  };
+
+  // qual indicador puxou para cima
+  const driver =
+    worstVal === kpi.noshowYesPct
+      ? `no-show ${kpi.noshowYesPct.toFixed(0)}%`
+      : worstVal === kpi.glosaRecorrentePct
+      ? `glosas ${kpi.glosaRecorrentePct.toFixed(0)}%`
+      : `retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%`;
+
+  return { key, label: labelMap[key], color: SEV_COLORS[key], driver };
+}
+
+/* ===================== Consolidado por tema / Detalhes (iguais ao anterior) ===================== */
 
 type SectionKey = "noshow" | "glosas" | "receitas";
 const SECTIONS: Record<
@@ -397,11 +441,10 @@ function renderSectionTable(
   return (doc as any).lastAutoTable.finalY;
 }
 
-/* ===================== Respostas detalhadas ===================== */
+/* ===== Respostas detalhadas (cards / tabelas) ===== */
 
 function drawPill(doc: jsPDF, x: number, y: number, text: string) {
   const padX = 6;
-  const padY = 4;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   const w = doc.getTextWidth(text) + padX * 2;
@@ -420,7 +463,6 @@ function safeText(v: any): string {
   return String(v);
 }
 
-/** Cards 2-col para ≤ 20 respostas */
 function renderDetailedAsCards(
   doc: jsPDF,
   answers: Answer[],
@@ -445,18 +487,15 @@ function renderDetailedAsCards(
     const col = idx % 2;
     const x = marginX + col * (colW + gap);
 
-    // medir comentário (resumo)
     const commentRaw = (a.comments || "").toString().trim();
     const comment = commentRaw ? commentRaw : "";
     const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
     const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
 
-    // altura básica do card
     const baseH =
-      24 /*title*/ + 8 /*id line*/ + 3 * 28 /*3 blocos pills*/ + (comment ? 18 : 0) + commentH + 18;
+      24 + 8 + 3 * 28 + (comment ? 18 : 0) + commentH + 18;
     let cardH = baseH;
 
-    // quebra de página
     if (y + cardH > pageH - 60) {
       y = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 14;
       doc.setFont("helvetica", "bold");
@@ -465,19 +504,16 @@ function renderDetailedAsCards(
       doc.text("Respostas detalhadas (cartões)", marginX, y - 12);
     }
 
-    // card
     doc.setDrawColor(CARD_EDGE);
     doc.setFillColor("#ffffff");
     doc.roundedRect(x, y, colW, cardH, 12, 12, "FD");
 
-    // cabeçalho
     const code = `R-${String(idx + 1).padStart(2, "0")}`;
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(12);
     doc.text(`Resposta ${code}`, x + 14, y + 22);
 
-    // identificação (se consentida)
     const consent = !!(a.consent_contact || a.consent);
     if (consent) {
       const idLine = [safeText(a.doctor_name), safeText(a.crm), safeText(a.contact)]
@@ -491,10 +527,8 @@ function renderDetailedAsCards(
       }
     }
 
-    // blocos
     let rowY = y + (consent ? 50 : 42);
 
-    // No-show
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(11);
@@ -506,7 +540,6 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_noshow_financial_impact));
     rowY += 28;
 
-    // Glosas
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(11);
@@ -518,7 +551,6 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_glosa_who_suffers));
     rowY += 28;
 
-    // Receitas
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(11);
@@ -530,7 +562,6 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_rx_tool_value));
     rowY += 28;
 
-    // Comentário (resumo)
     if (commentLines.length) {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
@@ -545,18 +576,14 @@ function renderDetailedAsCards(
       rowY += commentH;
     }
 
-    // rodapé do card
     rowY += 12;
     const usedH = rowY - y;
-    if (usedH + 10 > cardH) {
-      cardH = usedH + 10;
-    }
+    if (usedH + 10 > cardH) cardH = usedH + 10;
 
     if (col === 1) y += cardH + 12;
   });
 }
 
-/** Tabelas por tema para > 20 respostas */
 function renderDetailedAsTables(
   doc: jsPDF,
   answers: Answer[],
@@ -648,38 +675,11 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁGINA 1: Sumário + Resumo Executivo + Plano de Ação (3 cartões) ========= */
+      /* ========= PÁGINA 1: Banner de Plano de Ação (cor por severidade) + Sumário/Resumo ========= */
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
-      // Grid 3 colunas
-      const gutter = 16;
-      const cols = 3;
-      const colW = (pageW - marginX * 2 - gutter * (cols - 1)) / cols;
-
-      // Alturas
-      const line = 16;
-
-      // 1) SUMÁRIO
-      const tocItems = [
-        "Visão Geral (KPIs + gráficos por tema)",
-        "Respostas detalhadas",
-        "Comentários",
-        "Identificação (opcional)",
-      ];
-      const sumCardH = 22 + 12 + tocItems.length * line + 16;
-
-      // 2) RESUMO EXECUTIVO
-      const resumoBullets = [
-        `Amostra consolidada: ${kpi.total} respostas.`,
-        `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
-          0
-        )}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
-        "Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.",
-      ];
-      const resumoH = 22 + 12 + resumoBullets.length * line + 16;
-
-      // 3) PLANO DE AÇÃO (MVP)
+      const sev = computeSeverity(kpi);
       const actionBullets: string[] = [];
       if (kpi.noshowYesPct >= 50) {
         actionBullets.push("No-show: lembretes automáticos + confirmação (D-7 e D-1) e lista ativa de recuperação.");
@@ -693,43 +693,110 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       if (!actionBullets.length) {
         actionBullets.push("Manter monitoramento e ampliar base de respondentes (amostra pequena).");
       }
-      const planoH = 22 + 12 + actionBullets.length * line + 16;
 
-      // Altura uniforme p/ alinhamento estético
-      const rowH = Math.max(sumCardH, Math.max(resumoH, planoH));
+      const CARD_W = pageW - marginX * 2;
+      const GUTTER = 16;
+      const LINE = 16;
 
-      // Linha única com 3 cartões, centralizada na página
-      let y = centeredStartY(startY, pageH, rowH);
+      // === Banner Plano de Ação (logo abaixo do header, com respiro) ===
+      const bannerTop = startY + 12; // mais próximo do cabeçalho, porém não grudado
+      const bannerPad = 16;
+      const bannerTitle = "Plano de Ação sugerido (MVP)";
 
-      // (1) Sumário
-      {
-        const { innerX } = drawCard(doc, marginX, y, colW, rowH, "Sumário");
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(INK);
-        doc.setFontSize(11);
-        let listY = y + 22 + 12;
-        tocItems.forEach((label, i) => {
-          doc.circle(innerX, listY - 3, 1.8, "F");
-          doc.text(`${i + 1}. ${label}`, innerX + 8, listY, { maxWidth: colW - 32 });
-          listY += line;
-        });
-      }
+      // medir altura do conteúdo
+      const tmpY = 0; // apenas para cálculo
+      const bulletsH = actionBullets.length * LINE + 6;
+      const bannerH = 22 /*title*/ + 10 /*badge espaço*/ + bulletsH + bannerPad * 2;
 
-      // (2) Resumo Executivo — Principais insights
-      {
-        const x = marginX + colW + gutter;
-        drawCard(doc, x, y, colW, rowH, "Resumo Executivo — Principais insights");
-        bulletLines(doc, resumoBullets, x + 16, y + 22, colW - 32, line);
-      }
+      // card base
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, bannerTop, CARD_W, bannerH, 12, 12, "FD");
 
-      // (3) Plano de Ação sugerido (MVP)
-      {
-        const x = marginX + (colW + gutter) * 2;
-        drawCard(doc, x, y, colW, rowH, "Plano de Ação sugerido (MVP)");
-        bulletLines(doc, actionBullets, x + 16, y + 22, colW - 32, line);
-      }
+      // faixa colorida no topo (cor do nível)
+      doc.setFillColor(sev.color);
+      doc.roundedRect(marginX, bannerTop, CARD_W, 8, 12, 12, "F");
 
-      /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3 compacta) ========= */
+      // título
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(13);
+      doc.text(bannerTitle, marginX + bannerPad, bannerTop + 22);
+
+      // badge de nível no canto direito
+      const badgeText = `Nível de atenção: ${sev.label}`;
+      const badge = drawBadge(
+        doc,
+        badgeText,
+        marginX + CARD_W - bannerPad - (doc.getTextWidth(badgeText) + 16),
+        bannerTop + 12,
+        sev.color
+      );
+
+      // subtítulo discreto (driver do nível)
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK_SOFT);
+      doc.setFontSize(10);
+      const sub = `Pior indicador: ${sev.driver}`;
+      doc.text(sub, marginX + bannerPad, bannerTop + 22 + 14);
+
+      // bullets
+      bulletLines(doc, actionBullets, marginX + bannerPad, bannerTop + 22 + 14, CARD_W - bannerPad * 2, LINE);
+
+      // === Linha de baixo: Sumário (esq) + Resumo (dir) ===
+      const rowTop = bannerTop + bannerH + 16;
+      const colW = (CARD_W - GUTTER) / 2;
+
+      // SUMÁRIO
+      const tocItems = [
+        "Visão Geral (KPIs + gráficos por tema)",
+        "Respostas detalhadas",
+        "Comentários",
+        "Identificação (opcional)",
+      ];
+      const sumTitle = "Sumário";
+      const sumCardH = 22 + 12 + tocItems.length * LINE + 16;
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(marginX, rowTop, colW, sumCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(13);
+      doc.text(sumTitle, marginX + 16, rowTop + 22);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(11);
+      let listY = rowTop + 22 + 12;
+      tocItems.forEach((label, i) => {
+        doc.circle(marginX + 16, listY - 3, 1.8, "F");
+        doc.text(`${i + 1}. ${label}`, marginX + 16 + 8, listY, { maxWidth: colW - 32 });
+        listY += LINE;
+      });
+
+      // RESUMO EXECUTIVO
+      const resumoBullets = [
+        `Amostra consolidada: ${kpi.total} respostas.`,
+        `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(0)}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
+        "Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.",
+      ];
+      const resumoH = 22 + 12 + resumoBullets.length * LINE + 16;
+      const resumoX = marginX + colW + GUTTER;
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(resumoX, rowTop, colW, resumoH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(13);
+      doc.text("Resumo Executivo — Principais insights", resumoX + 16, rowTop + 22);
+
+      bulletLines(doc, resumoBullets, resumoX + 16, rowTop + 22, colW - 32, LINE);
+
+      /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3) ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
 
       const gap = 16;
@@ -743,43 +810,10 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.text("Visão Geral", marginX, kpiY + 2);
       kpiY += 14;
 
-      drawKpiCard(
-        doc,
-        marginX + 0 * (kpiCardW + gap),
-        kpiY,
-        kpiCardW,
-        kpiCardH,
-        "Total de respostas",
-        `${kpi.total}`,
-        ACCENT
-      );
-      drawKpiCard(
-        doc,
-        marginX + 1 * (kpiCardW + gap),
-        kpiY,
-        kpiCardW,
-        kpiCardH,
-        "% no-show relevante",
-        `${kpi.noshowYesPct.toFixed(0)}%`
-      );
-      drawKpiCard(
-        doc,
-        marginX + 2 * (kpiCardW + gap),
-        kpiY,
-        kpiCardW,
-        kpiCardH,
-        "% glosas recorrentes",
-        `${kpi.glosaRecorrentePct.toFixed(0)}%`
-      );
-      drawKpiCard(
-        doc,
-        marginX + 3 * (kpiCardW + gap),
-        kpiY,
-        kpiCardW,
-        kpiCardH,
-        "% receitas geram retrabalho",
-        `${kpi.rxReworkPct.toFixed(0)}%`
-      );
+      drawKpiCard(doc, marginX + 0 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "Total de respostas", `${kpi.total}`, ACCENT);
+      drawKpiCard(doc, marginX + 1 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
+      drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
 
       let gridTop = kpiY + kpiCardH + 24;
 
@@ -847,7 +881,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         renderSectionTable(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
       }
 
-      /* ========= RESPOSTAS DETALHADAS — modo adaptativo ========= */
+      /* ========= RESPOSTAS DETALHADAS ========= */
       if (answers.length <= 20) {
         renderDetailedAsCards(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
       } else {
@@ -899,7 +933,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         drawFooter(doc, pageW, pageH, marginX);
       }
 
-      /* ========= IDENTIFICAÇÃO (se autorizado) ========= */
+      /* ========= IDENTIFICAÇÃO ========= */
       const idRows = answers
         .filter((a) => a.consent_contact === true || a.consent === true)
         .map((a, i) => ({
@@ -914,7 +948,6 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         doc.addPage();
         const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
 
-        // Título + subtítulo
         doc.setFont("helvetica", "bold");
         doc.setTextColor(INK);
         doc.setFontSize(14);
@@ -924,13 +957,8 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         doc.setTextColor(INK_SOFT);
         doc.setFontSize(11);
         const infoY = sY + 36;
-        doc.text(
-          "Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.",
-          marginX,
-          infoY
-        );
+        doc.text("Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.", marginX, infoY);
 
-        // AQUI: deslocamento maior para garantir que a tabela NÃO sobreponha a frase
         const topY = infoY + 28;
 
         autoTable(doc as any, {
@@ -955,7 +983,6 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         });
       }
 
-      // salvar
       const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
       doc.save(fileName);
     } finally {
