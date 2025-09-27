@@ -815,7 +815,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       // espaçamentos
       const padX = P1_CARD_PAD_X;
-      const bannerPadTop = P1_CARD_PAD_Y + 6;
+      const bannerPadTop = P1_CARD_PAD_Y + 12;
       const bannerPadBottom = P1_CARD_PAD_Y;
       const titleH = 16;
       const subtitleGap = 12;
