@@ -25,8 +25,8 @@ type Answer = {
   consent_contact: boolean | null;
   consent: boolean | null;
 
-  doctor_role: string | null;         // “Geriatra”, “Dermatologista”, “Ortopedista”, “Outra”
-  clinic_size: string | null;         // “Pequeno”, “Médio”, “Grande”
+  doctor_role: string | null; // “Geriatra”, “Dermatologista”, “Ortopedista”, “Outra”
+  clinic_size: string | null; // “Pequeno”, “Médio”, “Grande”
 
   q_noshow_relevance: string | null;
   q_noshow_has_system: string | null;
@@ -174,13 +174,152 @@ function getConfidenceAndPlan(N: number) {
   }
   return {
     level: "Amostra robusta",
-    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    bullets: [
-      "Priorizar tema líder e iniciar MVP com metas de ROI claras.",
-      "Planejar integrações com sistemas da clínica (agenda, faturamento).",
-      "Definir pricing piloto e contrato de valor (SaaS/assinatura).",
-    ],
+      color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      bullets: [
+        "Priorizar tema líder e iniciar MVP com metas de ROI claras.",
+        "Planejar integrações com sistemas da clínica (agenda, faturamento).",
+        "Definir pricing piloto e contrato de valor (SaaS/assinatura).",
+      ],
   };
+}
+
+/* ===================== Helpers para espelhar o PDF (chips/cards) ===================== */
+
+const tone = (text: string) => {
+  const v = text.toLowerCase();
+  if (v.includes("não informado") || v === "—")
+    return { bg: "bg-slate-100", text: "text-slate-600", ring: "ring-slate-200" };
+  if (v === "não") return { bg: "bg-red-50", text: "text-red-700", ring: "ring-red-200" };
+  if (v === "sim") return { bg: "bg-emerald-50", text: "text-emerald-700", ring: "ring-emerald-200" };
+  if (["às vezes", "parcialmente", "em parte", "raramente", "talvez"].includes(v))
+    return { bg: "bg-amber-50", text: "text-amber-700", ring: "ring-amber-200" };
+  return { bg: "bg-blue-50", text: "text-blue-700", ring: "ring-blue-200" };
+};
+
+const Pill = ({ label }: { label: string }) => {
+  const t = tone(label || "Não informado");
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 text-[12px] font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}
+      style={{ lineHeight: 1.2 }}
+    >
+      {label}
+    </span>
+  );
+};
+
+const safe = (v: any) =>
+  v == null || v === "" ? "Não informado" : typeof v === "boolean" ? (v ? "Sim" : "Não") : String(v);
+
+function DetailedCard({ a, index }: { a: Answer; index: number }) {
+  const code = `R-${String(index + 1).padStart(2, "0")}`;
+  const consent = !!(a.consent_contact || a.consent);
+  const idLine = [safe(a.doctor_name), safe(a.crm), safe(a.contact)]
+    .filter((t) => t && t !== "Não informado")
+    .join(" • ");
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 min-h-[280px] flex flex-col">
+      <div className="text-sm font-bold text-slate-900">Resposta {code}</div>
+      {consent && idLine && (
+        <div className="mt-1 text-xs text-slate-500 break-words">{idLine}</div>
+      )}
+
+      <div className="mt-3 space-y-3">
+        <div>
+          <div className="text-xs font-semibold text-slate-700">No-show</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Pill label={safe(a.q_noshow_relevance)} />
+            <Pill label={safe(a.q_noshow_has_system)} />
+            <Pill label={safe(a.q_noshow_financial_impact)} />
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold text-slate-700">Glosas</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Pill label={safe(a.q_glosa_is_problem)} />
+            <Pill label={safe(a.q_glosa_interest)} />
+            <Pill label={safe(a.q_glosa_who_suffers)} />
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold text-slate-700">Receitas digitais</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Pill label={safe(a.q_rx_rework)} />
+            <Pill label={safe(a.q_rx_elderly_difficulty)} />
+            <Pill label={safe(a.q_rx_tool_value)} />
+          </div>
+        </div>
+      </div>
+
+      {a.comments && a.comments.trim().length > 0 && (
+        <div className="mt-4">
+          <div className="text-xs font-semibold text-slate-700">Comentário (resumo)</div>
+          <div className="mt-2 text-sm text-slate-800 whitespace-pre-wrap break-words">
+            {a.comments}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CommentsList({ list }: { list: Array<{ code: string; text: string }> }) {
+  if (!list.length) return null;
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <h3 className="text-lg font-semibold text-slate-800">Comentários (texto livre)</h3>
+      <div className="mt-3 space-y-2">
+        {list.map((c) => (
+          <div key={c.code} className="text-sm text-slate-800">
+            <span className="font-semibold">{c.code}</span> — {c.text}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IdentificationTable({
+  rows,
+}: {
+  rows: Array<{ code: string; nome: string; crm: string; contato: string }>;
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <h3 className="text-lg font-semibold text-slate-800">
+        Identificação (somente com autorização de contato)
+      </h3>
+      <p className="text-sm text-slate-500 mt-1">
+        Os dados aparecem apenas quando o respondente marcou o consentimento.
+      </p>
+      <div className="mt-3 overflow-x-auto">
+        <table className="min-w-[640px] w-full text-sm">
+          <thead className="text-left text-slate-600">
+            <tr>
+              <th className="py-2 pr-4">Resp.</th>
+              <th className="py-2 pr-4">Nome</th>
+              <th className="py-2 pr-4">CRM</th>
+              <th className="py-2 pr-4">Contato</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 text-slate-800">
+            {rows.map((r) => (
+              <tr key={r.code}>
+                <td className="py-2 pr-4">{r.code}</td>
+                <td className="py-2 pr-4">{r.nome || "—"}</td>
+                <td className="py-2 pr-4">{r.crm || "—"}</td>
+                <td className="py-2 pr-4 break-words">{r.contato || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 /* ===================== Página ===================== */
@@ -324,6 +463,32 @@ export default function AdminDashboard() {
   const gRxDiff = dist("q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]);
   const gRxVal = dist("q_rx_tool_value", ["Sim", "Não", "Talvez"]);
 
+  /* ===== Dados adicionais para espelhar PDF ===== */
+  const comments = useMemo(
+    () =>
+      filtered
+        .map((a, i) => ({
+          code: `R-${String(i + 1).padStart(2, "0")}`,
+          text: (a.comments || "").toString().trim(),
+        }))
+        .filter((c) => c.text.length > 0),
+    [filtered]
+  );
+
+  const idRows = useMemo(
+    () =>
+      filtered
+        .filter((a) => a.consent_contact === true || a.consent === true)
+        .map((a, i) => ({
+          code: `R-${String(i + 1).padStart(2, "0")}`,
+          nome: (a.doctor_name || "").trim(),
+          crm: (a.crm || "").trim(),
+          contato: (a.contact || "").trim(),
+        }))
+        .filter((r) => r.nome || r.crm || r.contato),
+    [filtered]
+  );
+
   if (loading) {
     return (
       <div className="max-w-6xl mx-auto px-6 py-10">
@@ -340,7 +505,7 @@ export default function AdminDashboard() {
         <ExportPDFButton
           kpi={kpi}
           summaryRows={[]}
-          answers={filtered}   // usa o dataset filtrado
+          answers={filtered} // usa o dataset filtrado
         />
       </div>
 
@@ -509,6 +674,22 @@ export default function AdminDashboard() {
           <DistBar title="Valor em ferramenta de apoio" data={gRxVal} />
         </div>
       </section>
+
+      {/* ====== NOVO: Respostas detalhadas (cartões) ====== */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 md:p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-slate-800">Respostas detalhadas (cartões)</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          {filtered.map((a, i) => (
+            <DetailedCard key={a.id ?? i} a={a} index={i} />
+          ))}
+        </div>
+      </section>
+
+      {/* ====== NOVO: Comentários ====== */}
+      <CommentsList list={comments} />
+
+      {/* ====== NOVO: Identificação (com consentimento) ====== */}
+      <IdentificationTable rows={idRows} />
     </div>
   );
 }
