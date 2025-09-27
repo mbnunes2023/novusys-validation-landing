@@ -20,8 +20,8 @@ type Answer = Record<string, any>;
 
 type Props = {
   kpi: KPI;
-  summaryRows?: Array<Record<string, number | string>>;
   answers: Answer[];
+  summaryRows?: Array<Record<string, number | string>>;
   chartRefs?: {
     noshowRef: React.RefObject<HTMLDivElement>;
     glosaRef: React.RefObject<HTMLDivElement>;
@@ -29,7 +29,7 @@ type Props = {
   };
 };
 
-/* ===================== Branding ===================== */
+/* ===================== Branding / Layout ===================== */
 
 const BRAND_BLUE = "#1976d2";
 const ACCENT = "#2575fc";
@@ -37,30 +37,45 @@ const INK = "#0f172a";
 const INK_SOFT = "#64748b";
 const CARD_EDGE = "#e9edf7";
 
-/* Severidade (cores acessíveis) */
-const SEV_COLORS = {
-  low: "#10b981",       // verde
-  moderate: "#f59e0b",  // amarelo
-  high: "#f97316",      // laranja
-  critical: "#ef4444",  // vermelho
+// Sinais de mercado (cores)
+export const SIGNAL_COLORS = {
+  strong: "#10b981",      // verde
+  moderate: "#f59e0b",    // amarelo
+  weak: "#94a3b8",        // cinza ardósia
+  inconclusive: "#3b82f6" // azul
 } as const;
 
-type SevKey = keyof typeof SEV_COLORS;
+type SignalKey = keyof typeof SIGNAL_COLORS;
+
+// Limiar(es) configuráveis
+export const THRESHOLDS = {
+  strong: 60,                // >= forte
+  moderate: 40,              // >= moderado
+  weak: 25,                  // >= fraco (abaixo disso também tratamos como fraco)
+
+  // guard-rails de amostra
+  minSampleModerate: 8,      // com N < 8, "moderado" vira fraco
+  minSampleStrong: 12,       // com N < 12, "forte" vira moderado
+
+  // overrides por tema (opcional)
+  byTheme: {
+    "no-show":   { strong: 55, moderate: 35 },
+    "glosas":    { strong: 60, moderate: 40 },
+    "receitas":  { strong: 60, moderate: 40 },
+  } as Partial<Record<"no-show" | "glosas" | "receitas", { strong: number; moderate: number }>>,
+};
+
+// Página 1: espaçamentos enxutos e consistentes
+const P1_LINE = 18;
+const P1_GUTTER = 18;
+const P1_CARD_PAD_X = 16;
+const P1_CARD_PAD_Y = 16;
 
 /* ===================== Utils ===================== */
 
 function formatNow(): string {
   const d = new Date();
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(d);
-}
-
-function usableHeight(startY: number, pageH: number, bottomPadding = 40) {
-  return Math.max(0, pageH - bottomPadding - startY);
-}
-function centeredStartY(startY: number, pageH: number, blockH: number) {
-  const avail = usableHeight(startY, pageH);
-  const offset = Math.max(0, (avail - blockH) / 2);
-  return startY + offset;
 }
 
 async function fetchAsDataURL(path: string): Promise<string | null> {
@@ -78,7 +93,7 @@ async function fetchAsDataURL(path: string): Promise<string | null> {
   }
 }
 
-/* ===================== Cabeçalho/Rodapé (MANTIDOS) ===================== */
+/* ===================== Cabeçalho/Rodapé (mantidos) ===================== */
 
 const TOP_GAP = 24;
 
@@ -89,9 +104,11 @@ function drawHeader(
   title: string,
   logoDataUrl?: string | null
 ) {
+  // faixa superior
   doc.setFillColor(BRAND_BLUE);
   doc.rect(0, 0, pageW, 6, "F");
 
+  // card do header
   const headerH = 72;
   const cardX = marginX;
   const cardY = 14;
@@ -102,9 +119,11 @@ function drawHeader(
   doc.setLineWidth(1);
   doc.roundedRect(cardX, cardY, cardW, headerH, 10, 10, "FD");
 
+  // centralização vertical
   const centerY = cardY + headerH / 2;
-  const leftPad = 18;
 
+  // bloco texto (esquerda)
+  const leftPad = 18;
   doc.setFont("helvetica", "bold");
   doc.setTextColor(INK);
   doc.setFontSize(18);
@@ -121,6 +140,7 @@ function drawHeader(
   doc.setFontSize(10);
   doc.text(`Gerado em ${formatNow()}`, cardX + leftPad, titleY + lineGap + 10);
 
+  // logo (direita)
   if (logoDataUrl) {
     const targetW = 170;
     const targetH = 50;
@@ -156,49 +176,7 @@ function newPage(
   return startY;
 }
 
-/* ===================== Elementos básicos ===================== */
-
-function drawCard(
-  doc: jsPDF,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  title: string,
-  titleSize = 13
-) {
-  doc.setDrawColor(CARD_EDGE);
-  doc.setFillColor("#ffffff");
-  doc.roundedRect(x, y, w, h, 12, 12, "FD");
-
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(INK);
-  doc.setFontSize(titleSize);
-  doc.text(title, x + 16, y + 22);
-
-  return { innerX: x + 16, innerY: y + 22 };
-}
-
-function bulletLines(
-  doc: jsPDF,
-  lines: string[],
-  x: number,
-  startY: number,
-  maxWidth: number,
-  lineH = 16
-) {
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(INK);
-  doc.setFontSize(11);
-  let y = startY + 12;
-  lines.forEach((line) => {
-    const chunks = doc.splitTextToSize(line, maxWidth - 12);
-    doc.circle(x + 0, y - 3, 1.8, "F");
-    doc.text(chunks, x + 8, y);
-    y += chunks.length * lineH;
-  });
-  return y;
-}
+/* ===================== Primitivos de desenho ===================== */
 
 function drawBadge(doc: jsPDF, text: string, x: number, y: number, fill = "#000") {
   const padX = 8;
@@ -214,33 +192,133 @@ function drawBadge(doc: jsPDF, text: string, x: number, y: number, fill = "#000"
   return { w, h };
 }
 
-/* ===================== KPI Cards / Distribuições ===================== */
-
-function drawKpiCard(
+function bulletLines(
   doc: jsPDF,
+  lines: string[],
   x: number,
-  y: number,
-  w: number,
-  h: number,
-  title: string,
-  value: string,
-  accent = BRAND_BLUE
+  startY: number,
+  maxWidth: number,
+  lineH = 16
 ) {
-  doc.setDrawColor(CARD_EDGE);
-  doc.setFillColor("#ffffff");
-  doc.roundedRect(x, y, w, h, 12, 12, "FD");
-  doc.setFillColor(accent);
-  doc.roundedRect(x, y, w, 6, 12, 12, "F");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
+  // bullets com alinhamento mesmo quando quebra
+  doc.setFont("helvetica", "normal");
   doc.setTextColor(INK);
-  doc.text(title, x + 16, y + 26);
+  doc.setFontSize(11);
+  let y = startY + 12;
 
-  doc.setTextColor(accent);
-  doc.setFontSize(30);
-  doc.text(value, x + 16, y + 58);
+  lines.forEach((line) => {
+    const chunks = doc.splitTextToSize(line, maxWidth - 16); // reserva 16px para o bullet
+    doc.circle(x, y - 3, 1.8, "F"); // bullet na 1ª linha
+    doc.text(chunks[0], x + 8, y);
+    for (let i = 1; i < chunks.length; i++) {
+      y += lineH;
+      doc.text(chunks[i], x + 8, y);
+    }
+    y += lineH; // espaço entre itens
+  });
+  return y;
 }
+
+/* ===================== Sinal de Mercado ===================== */
+
+function classifySignalWithThresholds(
+  theme: "no-show" | "glosas" | "receitas",
+  pct: number,
+  n: number
+): { key: SignalKey; label: string } {
+  const t = THRESHOLDS.byTheme?.[theme];
+  const STRONG = t?.strong ?? THRESHOLDS.strong;
+  const MODERATE = t?.moderate ?? THRESHOLDS.moderate;
+  const WEAK = THRESHOLDS.weak;
+
+  let key: SignalKey =
+    pct >= STRONG ? "strong" :
+    pct >= MODERATE ? "moderate" :
+    pct >= WEAK ? "weak" : "weak";
+
+  // guard-rails por N
+  if (n < THRESHOLDS.minSampleStrong && key === "strong") key = "moderate";
+  if (n < THRESHOLDS.minSampleModerate && key === "moderate") key = "weak";
+  if (n < 5) key = "inconclusive";
+
+  const labelMap: Record<SignalKey, string> = {
+    strong: "Forte",
+    moderate: "Moderado",
+    weak: "Fraco",
+    inconclusive: "Inconclusivo",
+  };
+  return { key, label: labelMap[key] };
+}
+
+function marketSignals(kpi: KPI) {
+  const n = kpi.total || 0;
+
+  const themes = [
+    { theme: "no-show" as const,  pct: kpi.noshowYesPct },
+    { theme: "glosas"  as const,  pct: kpi.glosaRecorrentePct },
+    { theme: "receitas" as const, pct: kpi.rxReworkPct },
+  ].map(t => {
+    const cls = classifySignalWithThresholds(t.theme, t.pct, n);
+    return {
+      theme: t.theme,
+      pct: t.pct,
+      key: cls.key,
+      label: cls.label,
+      reason: n < 5 ? "Amostra muito pequena" : `${Math.round(t.pct)}% relatou problema`,
+    };
+  });
+
+  const top = [...themes].sort((a,b) => b.pct - a.pct)[0];
+  let overallKey: SignalKey = top.key;
+  if (kpi.total < 5) overallKey = "inconclusive";
+
+  const labelMap: Record<SignalKey, string> = {
+    strong: "Forte", moderate: "Moderado", weak: "Fraco", inconclusive: "Inconclusivo"
+  };
+
+  return {
+    themes,
+    overall: { key: overallKey, label: labelMap[overallKey], color: SIGNAL_COLORS[overallKey] }
+  };
+}
+
+type ActionTone = "direto" | "formal" | "vendedor";
+const ACTION_TONE: ActionTone = "direto";
+
+const ACTION_TEXTS: Record<ActionTone, {
+  strong: (t: string)=>string;
+  moderate: (t: string)=>string;
+  weak: (t: string)=>string;
+  inconclusive: (t: string)=>string;
+}> = {
+  direto: {
+    strong:   (t)=> `${t}: rodar piloto pago por 4–6 semanas; buscar redução de 20–30%.`,
+    moderate: (t)=> `${t}: 5 entrevistas + protótipo simples; definir métrica e preço.`,
+    weak:     (t)=> `${t}: monitorar; não priorizar agora.`,
+    inconclusive: (t)=> `${t}: coletar mais respostas antes de decidir.`,
+  },
+  formal: {
+    strong:   (t)=> `${t}: conduzir piloto remunerado (4–6 semanas) com meta de redução de 20–30%.`,
+    moderate: (t)=> `${t}: realizar 5 entrevistas e prototipagem; definir métrica de sucesso e precificação.`,
+    weak:     (t)=> `${t}: manter acompanhamento; sem prioridade no momento.`,
+    inconclusive: (t)=> `${t}: ampliar a amostra para suportar decisão.`,
+  },
+  vendedor: {
+    strong:   (t)=> `${t}: provar valor em 30 dias — piloto pago e metas claras (20–30%).`,
+    moderate: (t)=> `${t}: falar com 5 clientes e mostrar um demo rápido; alinhar preço.`,
+    weak:     (t)=> `${t}: deixar no radar; agir se o interesse crescer.`,
+    inconclusive: (t)=> `${t}: precisamos de mais respostas para fechar o diagnóstico.`,
+  }
+};
+
+function actionBulletsFromSignals(sig: ReturnType<typeof marketSignals>): string[] {
+  const name = (theme: string) =>
+    theme === "no-show" ? "No-show" :
+    theme === "glosas"  ? "Glosas"  : "Receitas";
+  return sig.themes.map(t => ACTION_TEXTS[ACTION_TONE][t.key](name(t.theme)));
+}
+
+/* ===================== KPI Cards / Distribuições ===================== */
 
 type DistItem = { label: string; count: number; pct: string };
 
@@ -271,6 +349,32 @@ function dist(
 
   const items = order.map((k) => ({ label: k, count: counts[k], pct: toPct(counts[k]) }));
   return { items, answered, unknownCount: unknown };
+}
+
+function drawKpiCard(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  title: string,
+  value: string,
+  accent = BRAND_BLUE
+) {
+  doc.setDrawColor(CARD_EDGE);
+  doc.setFillColor("#ffffff");
+  doc.roundedRect(x, y, w, h, 12, 12, "FD");
+  doc.setFillColor(accent);
+  doc.roundedRect(x, y, w, 6, 12, 12, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(INK);
+  doc.text(title, x + 16, y + 26);
+
+  doc.setTextColor(accent);
+  doc.setFontSize(30);
+  doc.text(value, x + 16, y + 58);
 }
 
 function drawBarBlockCompact(
@@ -314,35 +418,7 @@ function drawBarBlockCompact(
   return y + nonEmpty.length * (CROW_H + CROW_GAP);
 }
 
-/* ===================== Severidade (nível e cor) ===================== */
-
-function computeSeverity(kpi: KPI): { key: SevKey; label: string; color: string; driver: string } {
-  const worstVal = Math.max(kpi.noshowYesPct, kpi.glosaRecorrentePct, kpi.rxReworkPct);
-  let key: SevKey = "low";
-  if (worstVal >= 80) key = "critical";
-  else if (worstVal >= 60) key = "high";
-  else if (worstVal >= 35) key = "moderate";
-  else key = "low";
-
-  const labelMap: Record<SevKey, string> = {
-    low: "Baixo",
-    moderate: "Moderado",
-    high: "Alto",
-    critical: "Crítico",
-  };
-
-  // qual indicador puxou para cima
-  const driver =
-    worstVal === kpi.noshowYesPct
-      ? `no-show ${kpi.noshowYesPct.toFixed(0)}%`
-      : worstVal === kpi.glosaRecorrentePct
-      ? `glosas ${kpi.glosaRecorrentePct.toFixed(0)}%`
-      : `retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%`;
-
-  return { key, label: labelMap[key], color: SEV_COLORS[key], driver };
-}
-
-/* ===================== Consolidado por tema / Detalhes (iguais ao anterior) ===================== */
+/* ===================== Consolidado por tema / Tabelas ===================== */
 
 type SectionKey = "noshow" | "glosas" | "receitas";
 const SECTIONS: Record<
@@ -360,7 +436,7 @@ const SECTIONS: Record<
   glosas: {
     title: "Glosas de convênios (Faturamento)",
     questions: [
-      { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não", "Às vezes"] },
+      { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não, " , "Às vezes"] as any }, // proteção simples a strings inconsistentes
       { key: "q_glosa_interest", label: "Interesse em checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
       { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
     ],
@@ -441,7 +517,7 @@ function renderSectionTable(
   return (doc as any).lastAutoTable.finalY;
 }
 
-/* ===== Respostas detalhadas (cards / tabelas) ===== */
+/* ===================== Respostas detalhadas ===================== */
 
 function drawPill(doc: jsPDF, x: number, y: number, text: string) {
   const padX = 6;
@@ -492,8 +568,7 @@ function renderDetailedAsCards(
     const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
     const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
 
-    const baseH =
-      24 + 8 + 3 * 28 + (comment ? 18 : 0) + commentH + 18;
+    const baseH = 24 + 8 + 3 * 28 + (comment ? 18 : 0) + commentH + 18;
     let cardH = baseH;
 
     if (y + cardH > pageH - 60) {
@@ -675,126 +750,127 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁGINA 1: Banner de Plano de Ação (cor por severidade) + Sumário/Resumo ========= */
+      /* ========= PÁGINA 1 ========= */
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
-      const sev = computeSeverity(kpi);
-      const actionBullets: string[] = [];
-      if (kpi.noshowYesPct >= 50) {
-        actionBullets.push("No-show: lembretes automáticos + confirmação (D-7 e D-1) e lista ativa de recuperação.");
-      }
-      if (kpi.glosaRecorrentePct >= 40) {
-        actionBullets.push("Glosas: checklist TISS/TUSS e conferência pré-envio; padrão de auditoria com amostragem semanal.");
-      }
-      if (kpi.rxReworkPct >= 40) {
-        actionBullets.push("Receitas digitais: padronizar modelo e fluxo assistido (envio paciente/farmácia) com validação automática.");
-      }
-      if (!actionBullets.length) {
-        actionBullets.push("Manter monitoramento e ampliar base de respondentes (amostra pequena).");
-      }
+      // --- Banner: Sinal de Mercado + Próximos Passos (reflete o dashboard)
+      const sig = marketSignals(kpi);
+      const bullets = actionBulletsFromSignals(sig);
 
       const CARD_W = pageW - marginX * 2;
-      const GUTTER = 16;
-      const LINE = 16;
+      const bannerTop = startY + 14;
+      const padX = P1_CARD_PAD_X, padY = P1_CARD_PAD_Y;
+      const titleH = 16, subtitleGap = 10, dividerGap = 8;
+      const themeLineH = 14;
+      const themeBlockH = themeLineH * 3 + 6;
+      const bulletsH = bullets.length * P1_LINE + 6;
+      const bannerH = padY + titleH + subtitleGap + themeBlockH + dividerGap + 1 + 10 + bulletsH + padY;
 
-      // === Banner Plano de Ação (logo abaixo do header, com respiro) ===
-      const bannerTop = startY + 12; // mais próximo do cabeçalho, porém não grudado
-      const bannerPad = 16;
-      const bannerTitle = "Plano de Ação sugerido (MVP)";
-
-      // medir altura do conteúdo
-      const tmpY = 0; // apenas para cálculo
-      const bulletsH = actionBullets.length * LINE + 6;
-      const bannerH = 22 /*title*/ + 10 /*badge espaço*/ + bulletsH + bannerPad * 2;
-
-      // card base
+      // card
       doc.setDrawColor(CARD_EDGE);
       doc.setFillColor("#ffffff");
       doc.roundedRect(marginX, bannerTop, CARD_W, bannerH, 12, 12, "FD");
 
-      // faixa colorida no topo (cor do nível)
-      doc.setFillColor(sev.color);
+      // faixa com cor do veredito geral
+      doc.setFillColor(sig.overall.color);
       doc.roundedRect(marginX, bannerTop, CARD_W, 8, 12, 12, "F");
 
       // título
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(13);
-      doc.text(bannerTitle, marginX + bannerPad, bannerTop + 22);
+      doc.text("Sinal de Mercado + Próximos Passos", marginX + padX, bannerTop + padY);
 
-      // badge de nível no canto direito
-      const badgeText = `Nível de atenção: ${sev.label}`;
-      const badge = drawBadge(
+      // badge veredito geral (direita)
+      const verdict = `Veredito geral: ${sig.overall.label}`;
+      drawBadge(
         doc,
-        badgeText,
-        marginX + CARD_W - bannerPad - (doc.getTextWidth(badgeText) + 16),
-        bannerTop + 12,
-        sev.color
+        verdict,
+        marginX + CARD_W - padX - (doc.getTextWidth(verdict) + 16),
+        bannerTop + padY - 6,
+        sig.overall.color
       );
 
-      // subtítulo discreto (driver do nível)
+      // 3 linhas com % por tema (espelha o dashboard)
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK_SOFT);
       doc.setFontSize(10);
-      const sub = `Pior indicador: ${sev.driver}`;
-      doc.text(sub, marginX + bannerPad, bannerTop + 22 + 14);
+      let yThemes = bannerTop + padY + subtitleGap;
+      sig.themes.forEach((t) => {
+        const name = t.theme === "no-show" ? "No-show" : t.theme === "glosas" ? "Glosas" : "Receitas";
+        const line = `${name}: ${Math.round(t.pct)}% — ${t.label}`;
+        doc.setFillColor(SIGNAL_COLORS[t.key]);
+        doc.circle(marginX + padX, yThemes - 3, 2.2, "F");
+        doc.setTextColor(INK);
+        doc.text(line, marginX + padX + 8, yThemes);
+        yThemes += themeLineH;
+      });
 
-      // bullets
-      bulletLines(doc, actionBullets, marginX + bannerPad, bannerTop + 22 + 14, CARD_W - bannerPad * 2, LINE);
+      // divisor + bullets simples
+      const dividerY = yThemes + dividerGap;
+      doc.setDrawColor(CARD_EDGE);
+      doc.setLineWidth(0.8);
+      doc.line(marginX + padX, dividerY, marginX + CARD_W - padX, dividerY);
 
-      // === Linha de baixo: Sumário (esq) + Resumo (dir) ===
+      bulletLines(doc, bullets, marginX + padX, dividerY + 10, CARD_W - padX * 2, P1_LINE);
+
+      // --- Sumário + Resumo (mesma altura)
       const rowTop = bannerTop + bannerH + 16;
-      const colW = (CARD_W - GUTTER) / 2;
+      const colW = (CARD_W - P1_GUTTER) / 2;
 
-      // SUMÁRIO
       const tocItems = [
         "Visão Geral (KPIs + gráficos por tema)",
         "Respostas detalhadas",
         "Comentários",
         "Identificação (opcional)",
       ];
-      const sumTitle = "Sumário";
-      const sumCardH = 22 + 12 + tocItems.length * LINE + 16;
+      const resumoBullets = [
+        `Amostra: ${kpi.total} respostas.`,
+        `Impacto: no-show ${kpi.noshowYesPct.toFixed(0)}%, glosas ${kpi.glosaRecorrentePct.toFixed(0)}%, receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
+        "Recomendação: piloto em no-show e glosas; fluxo assistido para receitas.",
+      ];
 
+      const sumH = P1_CARD_PAD_Y + 16 + 12 + tocItems.length * P1_LINE + P1_CARD_PAD_Y;
+      const resH = P1_CARD_PAD_Y + 16 + 12 + resumoBullets.length * P1_LINE + P1_CARD_PAD_Y;
+      const equalH = Math.max(sumH, resH);
+
+      // Sumário
       doc.setDrawColor(CARD_EDGE);
       doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, rowTop, colW, sumCardH, 12, 12, "FD");
-
+      doc.roundedRect(marginX, rowTop, colW, equalH, 12, 12, "FD");
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(13);
-      doc.text(sumTitle, marginX + 16, rowTop + 22);
-
+      doc.text("Sumário", marginX + P1_CARD_PAD_X, rowTop + P1_CARD_PAD_Y);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
       doc.setFontSize(11);
-      let listY = rowTop + 22 + 12;
+      let ySum = rowTop + P1_CARD_PAD_Y + 16 + 12;
       tocItems.forEach((label, i) => {
-        doc.circle(marginX + 16, listY - 3, 1.8, "F");
-        doc.text(`${i + 1}. ${label}`, marginX + 16 + 8, listY, { maxWidth: colW - 32 });
-        listY += LINE;
+        doc.circle(marginX + P1_CARD_PAD_X, ySum - 3, 1.8, "F");
+        doc.text(`${i + 1}. ${label}`, marginX + P1_CARD_PAD_X + 8, ySum, {
+          maxWidth: colW - P1_CARD_PAD_X * 2,
+        });
+        ySum += P1_LINE;
       });
 
-      // RESUMO EXECUTIVO
-      const resumoBullets = [
-        `Amostra consolidada: ${kpi.total} respostas.`,
-        `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(0)}%, Retrabalho em receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
-        "Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.",
-      ];
-      const resumoH = 22 + 12 + resumoBullets.length * LINE + 16;
-      const resumoX = marginX + colW + GUTTER;
-
+      // Resumo
+      const resumoX = marginX + colW + P1_GUTTER;
       doc.setDrawColor(CARD_EDGE);
       doc.setFillColor("#ffffff");
-      doc.roundedRect(resumoX, rowTop, colW, resumoH, 12, 12, "FD");
-
+      doc.roundedRect(resumoX, rowTop, colW, equalH, 12, 12, "FD");
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(13);
-      doc.text("Resumo Executivo — Principais insights", resumoX + 16, rowTop + 22);
-
-      bulletLines(doc, resumoBullets, resumoX + 16, rowTop + 22, colW - 32, LINE);
+      doc.text("Resumo Executivo — Principais insights", resumoX + P1_CARD_PAD_X, rowTop + P1_CARD_PAD_Y);
+      bulletLines(
+        doc,
+        resumoBullets,
+        resumoX + P1_CARD_PAD_X,
+        rowTop + P1_CARD_PAD_Y + 16,
+        colW - P1_CARD_PAD_X * 2,
+        P1_LINE
+      );
 
       /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3) ========= */
       startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
@@ -933,7 +1009,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         drawFooter(doc, pageW, pageH, marginX);
       }
 
-      /* ========= IDENTIFICAÇÃO ========= */
+      /* ========= IDENTIFICAÇÃO (consentida) ========= */
       const idRows = answers
         .filter((a) => a.consent_contact === true || a.consent === true)
         .map((a, i) => ({
@@ -957,7 +1033,11 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         doc.setTextColor(INK_SOFT);
         doc.setFontSize(11);
         const infoY = sY + 36;
-        doc.text("Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.", marginX, infoY);
+        doc.text(
+          "Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.",
+          marginX,
+          infoY
+        );
 
         const topY = infoY + 28;
 
@@ -983,6 +1063,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         });
       }
 
+      // salvar
       const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(new Date())}.pdf`;
       doc.save(fileName);
     } finally {
