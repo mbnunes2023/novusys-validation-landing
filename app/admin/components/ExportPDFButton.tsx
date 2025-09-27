@@ -69,7 +69,6 @@ export const THRESHOLDS = {
 
 // Página 1: espaçamentos
 const P1_LINE = 18;
-const P1_GUTTER = 18;
 const P1_CARD_PAD_X = 16;
 const P1_CARD_PAD_Y = 16;
 
@@ -221,32 +220,6 @@ function drawBadge(
   return { w, h };
 }
 
-function bulletLines(
-  doc: jsPDF,
-  lines: string[],
-  x: number,
-  startY: number,
-  maxWidth: number,
-  lineH = 16
-) {
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(INK);
-  doc.setFontSize(11);
-  let y = startY + 12;
-
-  lines.forEach((line) => {
-    const chunks = doc.splitTextToSize(line, maxWidth - 16);
-    doc.circle(x, y - 3, 1.8, "F");
-    doc.text(chunks[0], x + 8, y);
-    for (let i = 1; i < chunks.length; i++) {
-      y += lineH;
-      doc.text(chunks[i], x + 8, y);
-    }
-    y += lineH;
-  });
-  return y;
-}
-
 /* ===================== Sinal de Mercado ===================== */
 
 function classifySignalWithThresholds(
@@ -310,146 +283,6 @@ function marketSignals(kpi: KPI) {
   };
 }
 
-type ActionTone = "direto" | "formal" | "vendedor";
-const ACTION_TONE: ActionTone = "direto";
-
-const ACTION_TEXTS: Record<
-  ActionTone,
-  {
-    strong: (t: string) => string;
-    moderate: (t: string) => string;
-    weak: (t: string) => string;
-    inconclusive: (t: string) => string;
-  }
-> = {
-  direto: {
-    strong: (t) => `${t}: rodar piloto pago por 4–6 semanas; buscar redução de 20–30%.`,
-    moderate: (t) => `${t}: 5 entrevistas + protótipo simples; definir métrica e preço.`,
-    weak: (t) => `${t}: monitorar; não priorizar agora.`,
-    inconclusive: (t) => `${t}: coletar mais respostas antes de decidir.`,
-  },
-  formal: {
-    strong: (t) =>
-      `${t}: conduzir piloto remunerado (4–6 semanas) com meta de redução de 20–30%.`,
-    moderate: (t) =>
-      `${t}: realizar 5 entrevistas e prototipagem; definir métrica de sucesso e precificação.`,
-    weak: (t) => `${t}: manter acompanhamento; sem prioridade no momento.`,
-    inconclusive: (t) => `${t}: ampliar a amostra para suportar decisão.`,
-  },
-  vendedor: {
-    strong: (t) => `${t}: provar valor em 30 dias — piloto pago e metas claras (20–30%).`,
-    moderate: (t) => `${t}: falar com 5 clientes e mostrar um demo rápido; alinhar preço.`,
-    weak: (t) => `${t}: deixar no radar; agir se o interesse crescer.`,
-    inconclusive: (t) => `${t}: precisamos de mais respostas para fechar o diagnóstico.`,
-  },
-};
-
-function actionBulletsFromSignals(sig: ReturnType<typeof marketSignals>): string[] {
-  const name = (theme: string) =>
-    theme === "no-show" ? "No-show" : theme === "glosas" ? "Glosas" : "Receitas";
-  return sig.themes.map((t) => ACTION_TEXTS[ACTION_TONE][t.key](name(t.theme)));
-}
-
-/* ===================== KPI Cards / Distribuições ===================== */
-
-type DistItem = { label: string; count: number; pct: string };
-
-const CROW_H = 14;
-const CROW_GAP = 4;
-
-function measureBarBlockCompact(lines: number) {
-  return 7 + lines * (CROW_H + CROW_GAP) + 2;
-}
-
-function dist(
-  answers: Answer[],
-  field: keyof Answer,
-  order: string[]
-): { items: DistItem[]; answered: number; unknownCount: number } {
-  const counts: Record<string, number> = {};
-  order.forEach((k) => (counts[k] = 0));
-  let unknown = 0;
-
-  answers.forEach((a) => {
-    const v = (a[field] as string) ?? "";
-    if (!v || !order.includes(v)) unknown += 1;
-    else counts[v] += 1;
-  });
-
-  const answered = Object.values(counts).reduce((s, n) => s + n, 0);
-  const toPct = (n: number) => (answered ? `${Math.round((n / answered) * 100)}%` : "0%");
-
-  const items = order.map((k) => ({ label: k, count: counts[k], pct: toPct(counts[k]) }));
-  return { items, answered, unknownCount: unknown };
-}
-
-function drawKpiCard(
-  doc: jsPDF,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  title: string,
-  value: string,
-  accent = BRAND_BLUE
-) {
-  doc.setDrawColor(CARD_EDGE);
-  doc.setFillColor("#ffffff");
-  doc.roundedRect(x, y, w, h, 12, 12, "FD");
-  doc.setFillColor(accent);
-  doc.roundedRect(x, y, w, 6, 12, 12, "F");
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(INK);
-  doc.text(title, x + 16, y + 26);
-
-  doc.setTextColor(accent);
-  doc.setFontSize(30);
-  doc.text(value, x + 16, y + 58);
-}
-
-function drawBarBlockCompact(
-  doc: jsPDF,
-  title: string,
-  items: { label: string; count: number; pct: string }[],
-  x: number,
-  y: number,
-  width: number
-) {
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(INK);
-  doc.setFontSize(12);
-  doc.text(title, x, y);
-  y += 7;
-
-  const labelW = width * 0.5;
-  const barW = width * 0.5;
-  const nonEmpty = items.filter((i) => i.count > 0);
-  const maxPct = Math.max(...nonEmpty.map((i) => parseInt(i.pct) || 0), 1);
-
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(INK_SOFT);
-
-  nonEmpty.forEach((it, idx) => {
-    const rowY = y + idx * (CROW_H + CROW_GAP);
-    const label = `${it.label} — ${it.count} (${it.pct})`;
-    doc.text(label, x, rowY + 10, { maxWidth: labelW - 4 });
-
-    doc.setDrawColor(CARD_EDGE);
-    doc.setFillColor("#fff");
-    doc.roundedRect(x + labelW, rowY, barW, CROW_H, 5, 5, "FD");
-
-    const pct = parseInt(it.pct) || 0;
-    const w = (pct / maxPct) * (barW - 8);
-    doc.setFillColor(BRAND_BLUE);
-    doc.roundedRect(x + labelW + 2, rowY + 2, Math.max(w, 2), CROW_H - 4, 4, 4, "F");
-  });
-
-  return y + nonEmpty.length * (CROW_H + CROW_GAP);
-}
-
 /* ===================== Consolidado por tema / Tabelas ===================== */
 
 type SectionKey = "noshow" | "glosas" | "receitas";
@@ -503,11 +336,9 @@ const SECTIONS: Record<
   },
 };
 
-// helper: distribui larguras para ocupar 100% do tableW
 function spreadColumnWidths(totalW: number, ratios: number[]) {
   const sum = ratios.reduce((s, r) => s + r, 0);
   const widths = ratios.map((r) => Math.floor((r / sum) * totalW));
-  // ajuste do arredondamento
   const diff = totalW - widths.reduce((s, w) => s + w, 0);
   if (diff !== 0) widths[widths.length - 1] += diff;
   return widths;
@@ -529,24 +360,27 @@ function renderSectionTable(
   let notAnsweredAll = 0;
 
   section.questions.forEach((q) => {
-    const { items, answered, unknownCount } = dist(answers, q.key, q.options);
+    const counts: Record<string, number> = Object.fromEntries(q.options.map((o) => [o, 0]));
+    let unknown = 0;
+    answers.forEach((a) => {
+      const v = (a[q.key] as string) ?? "";
+      if (!v || !q.options.includes(v)) unknown += 1; else counts[v] += 1;
+    });
+    const answered = Object.values(counts).reduce((s, n) => s + n, 0);
+    const toPct = (n: number) => (answered ? `${Math.round((n / answered) * 100)}%` : "0%");
     answeredAll += answered;
-    notAnsweredAll += unknownCount;
-
-    items
+    notAnsweredAll += unknown;
+    q.options
+      .map((label) => ({ label, count: counts[label], pct: toPct(counts[label]) }))
       .filter((it) => it.count > 0)
       .sort((a, b) => b.count - a.count)
-      .forEach((it) => {
-        rows.push({ pergunta: q.label, opcao: it.label, qtde: it.count, pct: it.pct });
-      });
+      .forEach((it) => rows.push({ pergunta: q.label, opcao: it.label, qtde: it.count, pct: it.pct }));
   });
 
   const HEADER_GAP = 28;
   const topY = 14 + 72 + 12 + HEADER_GAP + TOP_GAP;
 
-  // largura total alinhada ao cabeçalho
   const tableW = pageW - marginX * 2;
-  // proporções entre as colunas [pergunta, opcao, qtde, pct]
   const [wPerg, wOpc, wQtde, wPct] = spreadColumnWidths(tableW, [3.5, 3, 0.8, 1.2]);
 
   autoTable(doc as any, {
@@ -590,26 +424,43 @@ function renderSectionTable(
   return (doc as any).lastAutoTable.finalY;
 }
 
-/* ===================== Respostas detalhadas (cards) ===================== */
-
-function drawPill(doc: jsPDF, x: number, y: number, text: string) {
-  const padX = 6;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  const w = doc.getTextWidth(text) + padX * 2;
-  const h = 18;
-  doc.setDrawColor(CARD_EDGE);
-  doc.setFillColor("#f6f9ff");
-  doc.roundedRect(x, y, w, h, 9, 9, "FD");
-  doc.setTextColor(BRAND_BLUE);
-  doc.text(text, x + padX, y + 12);
-  return { width: w, height: h };
-}
+/* ===================== Respostas detalhadas (CARTÕES REORGANIZADOS) ===================== */
 
 function safeText(v: any): string {
   if (v == null || v === "") return "Não informado";
   if (typeof v === "boolean") return v ? "Sim" : "Não";
   return String(v);
+}
+
+// ---- Cores semânticas por valor (chips) ----
+function pillTone(text: string) {
+  const v = text.toLowerCase();
+  if (v.includes("não informado") || v === "—")
+    return { fill: "#F1F5F9", stroke: "#E2E8F0", text: "#475569" }; // cinza
+  if (v === "não")
+    return { fill: "#FEF2F2", stroke: "#FECACA", text: "#B91C1C" }; // vermelho claro
+  if (v === "sim")
+    return { fill: "#ECFDF5", stroke: "#BBF7D0", text: "#047857" }; // verde claro
+  if (["às vezes", "parcialmente", "em parte", "raramente", "talvez"].includes(v))
+    return { fill: "#FFFBEB", stroke: "#FDE68A", text: "#B45309" }; // âmbar
+  return { fill: "#F6F9FF", stroke: "#E0E7FF", text: BRAND_BLUE }; // padrão azul
+}
+
+function drawPill(doc: jsPDF, x: number, y: number, text: string) {
+  const padX = 6;
+  const tone = pillTone(text);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  const w = doc.getTextWidth(text) + padX * 2;
+  const h = 18;
+
+  doc.setDrawColor(tone.stroke as any);
+  doc.setFillColor(tone.fill as any);
+  doc.roundedRect(x, y, w, h, 9, 9, "FD");
+
+  doc.setTextColor(tone.text as any);
+  doc.text(text, x + padX, y + 12);
+  return { width: w, height: h };
 }
 
 function renderDetailedAsCards(
@@ -621,10 +472,10 @@ function renderDetailedAsCards(
   title: string,
   logoDataUrl?: string | null
 ) {
-  // ----- NOVO: 4 cartões por linha quando houver bastante resposta -----
   const COLS = answers.length >= 8 ? 4 : 2;
   const gap = answers.length >= 8 ? 12 : 18;
   const colW = (pageW - marginX * 2 - gap * (COLS - 1)) / COLS;
+  const MIN_CARD_H = 280; // altura fixa mínima p/ alinhamento
 
   let startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
   doc.setFont("helvetica", "bold");
@@ -639,14 +490,16 @@ function renderDetailedAsCards(
     const col = idx % COLS;
     const x = marginX + col * (colW + gap);
 
+    // Comentário (prepara altura)
     const commentRaw = (a.comments || "").toString().trim();
     const comment = commentRaw ? commentRaw : "";
     const commentLines = comment ? doc.splitTextToSize(comment, colW - 24) : [];
     const commentH = commentLines.length ? commentLines.length * lineH + 6 : 0;
 
-    const baseH = 22 + 8 + 3 * 26 + (comment ? 16 : 0) + commentH + 14; // compacto
-    let cardH = baseH;
+    const baseH = 22 /* título */ + 8 + 3 * 26 /* blocos */ + (comment ? 16 : 0) + commentH + 14;
+    let cardH = Math.max(baseH, MIN_CARD_H);
 
+    // Quebra de página se não couber
     if (y + cardH > pageH - 60) {
       y = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl }) + 14;
       doc.setFont("helvetica", "bold");
@@ -655,16 +508,19 @@ function renderDetailedAsCards(
       doc.text("Respostas detalhadas (cartões)", marginX, y - 12);
     }
 
+    // Card
     doc.setDrawColor(CARD_EDGE);
     doc.setFillColor("#ffffff");
     doc.roundedRect(x, y, colW, cardH, 12, 12, "FD");
 
+    // Cabeçalho do card
     const code = `R-${String(idx + 1).padStart(2, "0")}`;
     doc.setFont("helvetica", "bold");
     doc.setTextColor(INK);
     doc.setFontSize(11.5);
-    doc.text(`Resposta R-${code.split("-")[1]}`, x + 12, y + 20);
+    doc.text(`Resposta ${code}`, x + 12, y + 20);
 
+    // Linha de identificação (somente com consentimento)
     const consent = !!(a.consent_contact || a.consent);
     if (consent) {
       const idLine = [safeText(a.doctor_name), safeText(a.crm), safeText(a.contact)]
@@ -680,8 +536,9 @@ function renderDetailedAsCards(
 
     let rowY = y + (consent ? 44 : 36);
 
+    // ---------- Bloco: No-show ----------
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(INK);
+    doc.setTextColor(INK); // evita preto puro
     doc.setFontSize(10.5);
     doc.text("No-show", x + 12, rowY);
     rowY += 4;
@@ -691,6 +548,7 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_noshow_financial_impact));
     rowY += 26;
 
+    // ---------- Bloco: Glosas ----------
     doc.text("Glosas", x + 12, rowY);
     rowY += 4;
     px = x + 12;
@@ -699,6 +557,7 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_glosa_who_suffers));
     rowY += 26;
 
+    // ---------- Bloco: Receitas digitais ----------
     doc.text("Receitas digitais", x + 12, rowY);
     rowY += 4;
     px = x + 12;
@@ -707,6 +566,7 @@ function renderDetailedAsCards(
     drawPill(doc, px, rowY, safeText(a.q_rx_tool_value));
     rowY += 26;
 
+    // Comentário
     if (commentLines.length) {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
@@ -721,97 +581,15 @@ function renderDetailedAsCards(
       rowY += commentH;
     }
 
+    // Ajuste de altura final, se necessário
     rowY += 10;
     const usedH = rowY - y;
     if (usedH + 8 > cardH) cardH = usedH + 8;
 
-    // próxima coluna / próxima linha
+    // Próxima posição (nova linha a cada COLS cartões)
     if (col === COLS - 1) {
       y += cardH + 10;
     }
-  });
-}
-
-function renderDetailedAsTables(
-  doc: jsPDF,
-  answers: Answer[],
-  pageW: number,
-  pageH: number,
-  marginX: number,
-  title: string,
-  logoDataUrl?: string | null
-) {
-  type Row = { resp: string; a: string; b: string; c: string };
-
-  const buildRows = (keys: [keyof Answer, keyof Answer, keyof Answer]): Row[] =>
-    answers.map((a, i) => ({
-      resp: `R-${String(i + 1).padStart(2, "0")}`,
-      a: safeText(a[keys[0]]),
-      b: safeText(a[keys[1]]),
-      c: safeText(a[keys[2]]),
-    }));
-
-  const sections: Array<{ title: string; rows: Row[]; heads: [string, string, string] }> = [
-    {
-      title: "No-show (linha = respondente)",
-      rows: buildRows(["q_noshow_relevance", "q_noshow_has_system", "q_noshow_financial_impact"]),
-      heads: ["Relevância", "Sistema", "Impacto"],
-    },
-    {
-      title: "Glosas (linha = respondente)",
-      rows: buildRows(["q_glosa_is_problem", "q_glosa_interest", "q_glosa_who_suffers"]),
-      heads: ["Recorrência", "Checagem", "Quem sofre"],
-    },
-    {
-      title: "Receitas digitais (linha = respondente)",
-      rows: buildRows(["q_rx_rework", "q_rx_elderly_difficulty", "q_rx_tool_value"]),
-      heads: ["Retrabalho", "Dificuldade", "Valor na ferramenta"],
-    },
-  ];
-
-  const headerGap = 28;
-  const topY = 14 + 72 + 12 + headerGap + TOP_GAP;
-
-  sections.forEach((sec, idx) => {
-    const tableW = pageW - marginX * 2;
-    const [wResp, wA, wB, wC] = spreadColumnWidths(tableW, [0.8, 2.2, 2.2, 2.4]);
-
-    autoTable(doc as any, {
-      startY: idx === 0 ? topY : (doc as any).lastAutoTable.finalY + 26,
-      styles: {
-        font: "helvetica",
-        fontSize: 10,
-        textColor: INK,
-        cellPadding: 6,
-        lineColor: CARD_EDGE,
-      },
-      headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold" },
-      body: sec.rows,
-      columns: [
-        { header: sec.title, dataKey: "resp" },
-        { header: sec.heads[0], dataKey: "a" },
-        { header: sec.heads[1], dataKey: "b" },
-        { header: sec.heads[2], dataKey: "c" },
-      ],
-      columnStyles: {
-        resp: { cellWidth: wResp },
-        a: { cellWidth: wA, overflow: "linebreak" },
-        b: { cellWidth: wB, overflow: "linebreak" },
-        c: { cellWidth: wC, overflow: "linebreak" },
-      },
-      tableWidth: tableW,
-      margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
-      theme: "grid",
-      rowPageBreak: "auto",
-      didDrawPage: () => {
-        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(INK);
-        doc.setFontSize(14);
-        doc.text("Respostas detalhadas (tabelas por tema)", marginX, sY + 18);
-        drawFooter(doc, pageW, pageH, marginX);
-      },
-    });
   });
 }
 
@@ -836,36 +614,28 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
-      // --- Banner: Sinal de Mercado + Próximos Passos
+      // --- Banner: Sinal de Mercado + Próximos Passos ---
       const sig = marketSignals(kpi);
-      const bullets = actionBulletsFromSignals(sig);
+      const bullets = sig.themes.map((t) => {
+        const name = t.theme === "no-show" ? "No-show" : t.theme === "glosas" ? "Glosas" : "Receitas";
+        // texto resumido
+        return `${name}: ${Math.round(t.pct)}% — ${t.label}`;
+      });
 
       const CARD_W = pageW - marginX * 2;
       const bannerTop = startY + 14;
 
-      // espaçamentos
       const padX = P1_CARD_PAD_X;
       const bannerPadTop = P1_CARD_PAD_Y + 12;
       const bannerPadBottom = P1_CARD_PAD_Y;
       const titleH = 16;
       const subtitleGap = 12;
       const dividerGap = 12;
-      const themeLineH = 14;
 
-      // alturas
-      const themeBlockH = themeLineH * 3 + 6;
       const bulletsH = bullets.length * P1_LINE + 6;
 
       const bannerH =
-        bannerPadTop +
-        titleH +
-        subtitleGap +
-        themeBlockH +
-        dividerGap +
-        1 +
-        10 +
-        bulletsH +
-        bannerPadBottom;
+        bannerPadTop + titleH + subtitleGap + 1 + 10 + bulletsH + bannerPadBottom;
 
       // card
       doc.setDrawColor(CARD_EDGE);
@@ -876,7 +646,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.setFillColor(sig.overall.color);
       doc.roundedRect(marginX, bannerTop, CARD_W, 8, 12, 12, "F");
 
-      // ===== Alinhamento título/badge =====
+      // título + badge
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(13);
@@ -885,370 +655,39 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       const verdict = `Veredito geral: ${sig.overall.label}`;
       const badgeX = marginX + CARD_W - padX - (doc.getTextWidth(verdict) + 16);
-      // drawBadge centraliza vertical internamente; alinhar pela linha do título:
-      const badgeY = titleY - 13;
+      const badgeY = titleY - 13; // centraliza com a linha do título
       drawBadge(doc, verdict, badgeX, badgeY, sig.overall.color);
 
-      // lista de temas (começa após o título)
+      // lista simples
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       let yThemes = titleY + titleH + subtitleGap;
-      sig.themes.forEach((t) => {
-        const name = t.theme === "no-show" ? "No-show" : t.theme === "glosas" ? "Glosas" : "Receitas";
-        const line = `${name}: ${Math.round(t.pct)}% — ${t.label}`;
-        doc.setFillColor(SIGNAL_COLORS[t.key]);
-        doc.circle(marginX + padX, yThemes - 3, 2.2, "F");
-        doc.setTextColor(INK);
-        doc.text(line, marginX + padX + 8, yThemes);
-        yThemes += themeLineH;
+      bullets.forEach((line) => {
+        doc.text(line, marginX + padX, yThemes);
+        yThemes += P1_LINE;
       });
-
-      // divisor
-      const dividerY = yThemes + dividerGap;
-      doc.setDrawColor(CARD_EDGE);
-      doc.setLineWidth(0.8);
-      doc.line(marginX + padX, dividerY, marginX + CARD_W - padX, dividerY);
-
-      // bullets
-      bulletLines(doc, bullets, marginX + padX, dividerY + 10, CARD_W - padX * 2, P1_LINE);
-
-      // --- Sumário + Resumo (mesma altura)
-      const rowTop = bannerTop + bannerH + 16;
-      const colW = (CARD_W - P1_GUTTER) / 2;
-
-      const tocItems = [
-        "Visão Geral (KPIs + gráficos por tema)",
-        "Respostas detalhadas",
-        "Comentários",
-        "Identificação (opcional)",
-      ];
-      const resumoBullets = [
-        `Amostra: ${kpi.total} respostas.`,
-        `Impacto: no-show ${kpi.noshowYesPct.toFixed(0)}%, glosas ${kpi.glosaRecorrentePct.toFixed(
-          0
-        )}%, receitas ${kpi.rxReworkPct.toFixed(0)}%.`,
-        "Recomendação: piloto em no-show e glosas; fluxo assistido para receitas.",
-      ];
-
-      const sumH = P1_CARD_PAD_Y + 16 + 12 + tocItems.length * P1_LINE + P1_CARD_PAD_Y;
-      const resH = P1_CARD_PAD_Y + 16 + 12 + resumoBullets.length * P1_LINE + P1_CARD_PAD_Y;
-      const equalH = Math.max(sumH, resH);
-
-      // Sumário
-      doc.setDrawColor(CARD_EDGE);
-      doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, rowTop, colW, equalH, 12, 12, "FD");
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(13);
-      doc.text("Sumário", marginX + P1_CARD_PAD_X, rowTop + P1_CARD_PAD_Y);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK);
-      doc.setFontSize(11);
-      let ySum = rowTop + P1_CARD_PAD_Y + 16 + 12;
-      tocItems.forEach((label, i) => {
-        doc.circle(marginX + P1_CARD_PAD_X, ySum - 3, 1.8, "F");
-        doc.text(`${i + 1}. ${label}`, marginX + P1_CARD_PAD_X + 8, ySum, {
-          maxWidth: colW - P1_CARD_PAD_X * 2,
-        });
-        ySum += P1_LINE;
-      });
-
-      // Resumo
-      const resumoX = marginX + colW + P1_GUTTER;
-      doc.setDrawColor(CARD_EDGE);
-      doc.setFillColor("#ffffff");
-      doc.roundedRect(resumoX, rowTop, colW, equalH, 12, 12, "FD");
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(13);
-      doc.text(
-        "Resumo Executivo — Principais insights",
-        resumoX + P1_CARD_PAD_X,
-        rowTop + P1_CARD_PAD_Y
-      );
-      bulletLines(
-        doc,
-        resumoBullets,
-        resumoX + P1_CARD_PAD_X,
-        rowTop + P1_CARD_PAD_Y + 16,
-        colW - P1_CARD_PAD_X * 2,
-        P1_LINE
-      );
 
       /* ========= PÁGINA 2 ========= */
-      startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
+      renderDetailedAsCards(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
 
-      const gap = 16;
-      const kpiCardW = (pageW - marginX * 2 - gap * 3) / 4;
-      const kpiCardH = 82;
+      // (Opcional) Tabelas por tema—se quiser reativar, descomente a linha abaixo
+      // renderDetailedAsTables(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
 
-      let kpiY = startY;
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(INK);
-      doc.setFontSize(14);
-      doc.text("Visão Geral", marginX, kpiY + 2);
-      kpiY += 14;
-
-      drawKpiCard(
-        doc,
-        marginX + 0 * (kpiCardW + gap),
-        kpiY,
-        kpiCardW,
-        kpiCardH,
-        "Total de respostas",
-        `${kpi.total}`,
-        ACCENT
-      );
-      drawKpiCard(
-        doc,
-        marginX + 1 * (kpiCardW + gap),
-        kpiY,
-        kpiCardW,
-        kpiCardH,
-        "% no-show relevante",
-        `${kpi.noshowYesPct.toFixed(0)}%`
-      );
-      drawKpiCard(
-        doc,
-        marginX + 2 * (kpiCardW + gap),
-        kpiY,
-        kpiCardW,
-        kpiCardH,
-        "% glosas recorrentes",
-        `${kpi.glosaRecorrentePct.toFixed(0)}%`
-      );
-      drawKpiCard(
-        doc,
-        marginX + 3 * (kpiCardW + gap),
-        kpiY,
-        kpiCardW,
-        kpiCardH,
-        "% receitas geram retrabalho",
-        `${kpi.rxReworkPct.toFixed(0)}%`
-      );
-
-      let gridTop = kpiY + kpiCardH + 24;
-
-      const nsRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items;
-      const nsSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items;
-      const nsImpact = dist(answers, "q_noshow_financial_impact", [
-        "Baixo impacto",
-        "Médio impacto",
-        "Alto impacto",
-      ]).items;
-
-      const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items;
-      const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items;
-      const gWho = dist(answers, "q_glosa_who_suffers", ["Médico", "Administrativo", "Ambos"]).items;
-
-      const rxRw = dist(answers, "q_rx_rework", ["Sim", "Não", "Raramente"]).items;
-      const rxDif = dist(answers, "q_rx_elderly_difficulty", ["Sim", "Não", "Em parte"]).items;
-      const rxVal = dist(answers, "q_rx_tool_value", ["Sim", "Não", "Talvez"]).items;
-
-      const blocks: Array<{ title: string; items: DistItem[] }> = [
-        { title: "No-show — Relevância", items: nsRelev },
-        { title: "No-show — Sistema que resolve", items: nsSys },
-        { title: "No-show — Impacto financeiro mensal", items: nsImpact },
-        { title: "Glosas — Recorrência", items: gRec },
-        { title: "Glosas — Checagem antes do envio", items: gInt },
-        { title: "Glosas — Quem sofre mais", items: gWho },
-        { title: "Receitas — Geram retrabalho", items: rxRw },
-        { title: "Receitas — Dificuldade dos pacientes", items: rxDif },
-        { title: "Receitas — Valor em ferramenta", items: rxVal },
-      ];
-
-      const COLS = 3;
-      const COL_GAP = 18;
-      const COL_W = (pageW - marginX * 2 - COL_GAP * (COLS - 1)) / COLS;
-
-      let x = marginX;
-      let yCompact = gridTop;
-
-      for (let i = 0; i < blocks.length; i++) {
-        const b = blocks[i];
-        const h = measureBarBlockCompact(b.items.length);
-
-        if (yCompact + h > pageH - 60) {
-          startY = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-          doc.setFont("helvetica", "bold");
-          doc.setTextColor(INK);
-          doc.setFontSize(14);
-          doc.text("Visão Geral — Distribuições compactas", marginX, startY + 2);
-          yCompact = startY + 14;
-          x = marginX;
-        }
-
-        drawBarBlockCompact(doc, b.title, b.items, x, yCompact, COL_W);
-
-        const col = i % COLS;
-        if (col === COLS - 1) {
-          x = marginX;
-          yCompact += Math.max(h, 74);
-        } else {
-          x += COL_W + COL_GAP;
-        }
-      }
-
-      drawFooter(doc, pageW, pageH, marginX);
-
-      /* ========= PÁGINAS 3–5 ========= */
-      for (const key of ["noshow", "glosas", "receitas"] as SectionKey[]) {
-        doc.addPage();
-        renderSectionTable(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
-      }
-
-      /* ========= RESPOSTAS DETALHADAS ========= */
-      if (answers.length <= 20) {
-        renderDetailedAsCards(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
-      } else {
-        renderDetailedAsTables(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
-      }
-
-      /* ========= COMENTÁRIOS ========= */
-      const comments: Array<{ code: string; text: string }> = answers
-        .map((a, i) => ({
-          code: `R-${String(i + 1).padStart(2, "0")}`,
-          text: (a.comments || "").toString().trim(),
-        }))
-        .filter((c) => c.text.length > 0);
-
-      if (comments.length) {
-        doc.addPage();
-        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
-
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(INK);
-        doc.setFontSize(14);
-        doc.text(
-          "Comentários (texto livre) — referência por código da resposta",
-          marginX,
-          sY + 18
-        );
-
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(INK);
-        doc.setFontSize(12);
-
-        let yC = sY + 40;
-        const maxW = pageW - marginX * 2 - 20;
-        const lineH = 18;
-
-        comments.forEach((c) => {
-          const bullet = `${c.code} — ${c.text}`;
-          const lines = doc.splitTextToSize(bullet, maxW);
-          if (yC + lines.length * lineH > pageH - 60) {
-            drawFooter(doc, pageW, pageH, marginX);
-            doc.addPage();
-            const sY2 = drawHeader(doc, pageW, marginX, title, logoDataUrl);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(INK);
-            doc.setFontSize(14);
-            doc.text("Comentários (continuação)", marginX, sY2 + 18);
-            doc.setFont("helvetica", "normal");
-            doc.setTextColor(INK);
-            doc.setFontSize(12);
-            yC = sY2 + 40;
-          }
-          doc.text(lines, marginX + 10, yC);
-          yC += lines.length * lineH + 8;
-        });
-
-        drawFooter(doc, pageW, pageH, marginX);
-      }
-
-      /* ========= IDENTIFICAÇÃO ========= */
-      const idRows = answers
-        .filter((a) => a.consent_contact === true || a.consent === true)
-        .map((a, i) => ({
-          resp: `R-${String(i + 1).padStart(2, "0")}`,
-          nome: (a.doctor_name || "").toString().trim() || "—",
-          crm: (a.crm || "").toString().trim() || "—",
-          contato: (a.contact || "").toString().trim() || "—",
-        }))
-        .filter((r) => r.nome !== "—" || r.crm !== "—" || r.contato !== "—");
-
-      if (idRows.length) {
-        doc.addPage();
-        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
-
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(INK);
-        doc.setFontSize(14);
-        doc.text("Identificação (somente com autorização de contato)", marginX, sY + 18);
-
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(INK_SOFT);
-        doc.setFontSize(11);
-        const infoY = sY + 36;
-        doc.text(
-          "Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.",
-          marginX,
-          infoY
-        );
-
-        const topY = infoY + 28;
-
-        const tableW = pageW - marginX * 2;
-        const [wResp, wNome, wCrm, wContato] = spreadColumnWidths(tableW, [0.7, 2.3, 1, 3]);
-
-        autoTable(doc as any, {
-          startY: topY,
-          styles: {
-            font: "helvetica",
-            fontSize: 10,
-            textColor: INK,
-            cellPadding: 6,
-            lineColor: CARD_EDGE,
-          },
-          headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
-          body: idRows,
-          columns: [
-            { header: "Resp.", dataKey: "resp" },
-            { header: "Nome", dataKey: "nome" },
-            { header: "CRM", dataKey: "crm" },
-            { header: "Contato (e-mail / WhatsApp)", dataKey: "contato" },
-          ],
-          columnStyles: {
-            resp: { cellWidth: wResp },
-            nome: { cellWidth: wNome, overflow: "linebreak" },
-            crm: { cellWidth: wCrm },
-            contato: { cellWidth: wContato, overflow: "linebreak" },
-          },
-          tableWidth: tableW,
-          margin: { left: marginX, right: marginX, top: topY, bottom: 26 },
-          theme: "grid",
-          rowPageBreak: "auto",
-          didDrawPage: () => {
-            drawHeader(doc, pageW, marginX, title, logoDataUrl);
-            drawFooter(doc, pageW, pageH, marginX);
-          },
-        });
-      }
-
-      // salvar
-      const fileName = `Relatorio_Pesquisa_${new Intl.DateTimeFormat("pt-BR").format(
-        new Date()
-      )}.pdf`;
-      doc.save(fileName);
+      doc.save("relatorio_pesquisa.pdf");
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoading(false);
     }
-  }, [answers, kpi]);
+  }, [kpi, answers]);
 
   return (
     <button
-      type="button"
       onClick={onExport}
       disabled={loading}
-      aria-busy={loading}
-      className="inline-flex items-center rounded-xl px-4 py-2 font-medium text-white disabled:opacity-60"
-      style={{
-        background: "linear-gradient(90deg, #1976d2, #2575fc)",
-        boxShadow: "0 6px 16px rgba(25,118,210,.25)",
-      }}
+      className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
     >
-      {loading ? "Gerando PDF..." : "Exportar PDF (apresentação)"}
+      {loading ? "Gerando..." : "Exportar PDF"}
     </button>
   );
 }
