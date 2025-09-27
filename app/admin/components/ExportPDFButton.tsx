@@ -51,7 +51,7 @@ type SignalKey = keyof typeof SIGNAL_COLORS;
 export const THRESHOLDS = {
   strong: 60,                // >= forte
   moderate: 40,              // >= moderado
-  weak: 25,                  // >= fraco (abaixo disso também tratamos como fraco)
+  weak: 25,                  // >= fraco
 
   // guard-rails de amostra
   minSampleModerate: 8,      // com N < 8, "moderado" vira fraco
@@ -436,7 +436,7 @@ const SECTIONS: Record<
   glosas: {
     title: "Glosas de convênios (Faturamento)",
     questions: [
-      { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não, " , "Às vezes"] as any }, // proteção simples a strings inconsistentes
+      { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não", "Às vezes"] },
       { key: "q_glosa_interest", label: "Interesse em checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
       { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
     ],
@@ -760,12 +760,22 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       const CARD_W = pageW - marginX * 2;
       const bannerTop = startY + 14;
-      const padX = P1_CARD_PAD_X, padY = P1_CARD_PAD_Y;
-      const titleH = 16, subtitleGap = 10, dividerGap = 8;
+
+      // >>> ajustes de espaçamento (mais respiro e padrão igual aos cards) <<<
+      const padX = P1_CARD_PAD_X;
+      const bannerPadTop = P1_CARD_PAD_Y + 6;   // título um pouco abaixo da faixa azul
+      const bannerPadBottom = P1_CARD_PAD_Y;
+      const titleH = 16;
+      const subtitleGap = 12;                   // igual aos outros cards
+      const dividerGap = 12;                    // divisor com respiro padrão
       const themeLineH = 14;
+
+      // alturas
       const themeBlockH = themeLineH * 3 + 6;
       const bulletsH = bullets.length * P1_LINE + 6;
-      const bannerH = padY + titleH + subtitleGap + themeBlockH + dividerGap + 1 + 10 + bulletsH + padY;
+
+      const bannerH =
+        bannerPadTop + titleH + subtitleGap + themeBlockH + dividerGap + 1 + 10 + bulletsH + bannerPadBottom;
 
       // card
       doc.setDrawColor(CARD_EDGE);
@@ -776,26 +786,26 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.setFillColor(sig.overall.color);
       doc.roundedRect(marginX, bannerTop, CARD_W, 8, 12, 12, "F");
 
-      // título
+      // título (agora mais abaixo da faixa)
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
       doc.setFontSize(13);
-      doc.text("Sinal de Mercado + Próximos Passos", marginX + padX, bannerTop + padY);
+      doc.text("Sinal de Mercado + Próximos Passos", marginX + padX, bannerTop + bannerPadTop);
 
-      // badge veredito geral (direita)
+      // badge veredito geral (alinha ao novo topo)
       const verdict = `Veredito geral: ${sig.overall.label}`;
       drawBadge(
         doc,
         verdict,
         marginX + CARD_W - padX - (doc.getTextWidth(verdict) + 16),
-        bannerTop + padY - 6,
+        bannerTop + bannerPadTop - 6,
         sig.overall.color
       );
 
-      // 3 linhas com % por tema (espelha o dashboard)
+      // 3 linhas com % por tema (espelha o dashboard) — começam APÓS o título
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      let yThemes = bannerTop + padY + subtitleGap;
+      let yThemes = bannerTop + bannerPadTop + titleH + subtitleGap;
       sig.themes.forEach((t) => {
         const name = t.theme === "no-show" ? "No-show" : t.theme === "glosas" ? "Glosas" : "Receitas";
         const line = `${name}: ${Math.round(t.pct)}% — ${t.label}`;
@@ -806,12 +816,13 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         yThemes += themeLineH;
       });
 
-      // divisor + bullets simples
+      // divisor com o mesmo respiro dos cards
       const dividerY = yThemes + dividerGap;
       doc.setDrawColor(CARD_EDGE);
       doc.setLineWidth(0.8);
       doc.line(marginX + padX, dividerY, marginX + CARD_W - padX, dividerY);
 
+      // bullets (com espaçamento padrão)
       bulletLines(doc, bullets, marginX + padX, dividerY + 10, CARD_W - padX * 2, P1_LINE);
 
       // --- Sumário + Resumo (mesma altura)
