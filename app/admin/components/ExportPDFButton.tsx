@@ -20,7 +20,7 @@ type Answer = Record<string, any>;
 
 type Props = {
   kpi: KPI;
-  summaryRows?: Array<Record<string, number | string>>; // compatibilidade, não utilizado
+  summaryRows: Array<Record<string, number | string>>; // compatibilidade
   answers: Answer[];
   chartRefs?: {
     noshowRef: React.RefObject<HTMLDivElement>;
@@ -125,9 +125,7 @@ function drawHeader(
     const imgY = centerY - targetH / 2;
     try {
       doc.addImage(logoDataUrl, "PNG", imgX, imgY, targetW, targetH);
-    } catch {
-      // ignora erro de render do PNG
-    }
+    } catch {}
   }
 
   return cardY + headerH + 12 + TOP_GAP;
@@ -188,6 +186,10 @@ type DistItem = { label: string; count: number; pct: string };
 
 const ROW_H = 20;
 const ROW_GAP = 6;
+
+function measureBarBlock(lines: number) {
+  return 8 + lines * (ROW_H + ROW_GAP);
+}
 
 function dist(
   answers: Answer[],
@@ -316,7 +318,11 @@ const SECTIONS: Record<
     title: "Glosas de convênios (Faturamento)",
     questions: [
       { key: "q_glosa_is_problem", label: "Glosas recorrentes", options: ["Sim", "Não", "Às vezes"] },
-      { key: "q_glosa_interest", label: "Interesse em checagem antes do envio", options: ["Sim", "Não", "Talvez"] },
+      {
+        key: "q_glosa_interest",
+        label: "Interesse em checagem antes do envio",
+        options: ["Sim", "Não", "Talvez"],
+      },
       { key: "q_glosa_who_suffers", label: "Quem sofre mais", options: ["Médico", "Administrativo", "Ambos"] },
     ],
   },
@@ -324,7 +330,11 @@ const SECTIONS: Record<
     title: "Receitas digitais e telemedicina",
     questions: [
       { key: "q_rx_rework", label: "Receitas geram retrabalho", options: ["Sim", "Não", "Raramente"] },
-      { key: "q_rx_elderly_difficulty", label: "Pacientes têm dificuldade", options: ["Sim", "Não", "Em parte"] },
+      {
+        key: "q_rx_elderly_difficulty",
+        label: "Pacientes têm dificuldade",
+        options: ["Sim", "Não", "Em parte"],
+      },
       { key: "q_rx_tool_value", label: "Valor em ferramenta de apoio", options: ["Sim", "Não", "Talvez"] },
     ],
   },
@@ -364,7 +374,7 @@ function renderSectionTable(
   autoTable(doc as any, {
     startY: topY,
     styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
-    headStyles: { fillColor: [219, 234, 254], textColor: INK, fontStyle: "bold" },
+    headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
     body: rows.length ? rows : [{ pergunta: "—", opcao: "—", qtde: 0, pct: "0%" }],
     columns: [
       { header: section.title, dataKey: "pergunta" },
@@ -398,6 +408,7 @@ function renderSectionTable(
 
 /* ===================== Respostas detalhadas — Premium ===================== */
 
+/** desenha um "pill" com texto dentro */
 function drawPill(doc: jsPDF, x: number, y: number, text: string) {
   const padX = 6;
   const padY = 4;
@@ -452,12 +463,7 @@ function renderDetailedAsCards(
 
     // altura básica do card
     const baseH =
-      24 /*title*/ +
-      8 /*id line*/ +
-      3 * 28 /*3 blocos pills*/ +
-      (comment ? 18 : 0) +
-      commentH +
-      18;
+      24 /*title*/ + 8 /*id line*/ + 3 * 28 /*3 blocos pills*/ + (comment ? 18 : 0) + commentH + 18;
     let cardH = baseH;
 
     // quebra de página?
@@ -556,7 +562,6 @@ function renderDetailedAsCards(
       cardH = usedH + 10;
     }
 
-    // próxima coluna/linha
     if (col === 1) y += cardH + 12;
   });
 }
@@ -607,7 +612,7 @@ function renderDetailedAsTables(
     autoTable(doc as any, {
       startY: idx === 0 ? topY : (doc as any).lastAutoTable.finalY + 26,
       styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
-      headStyles: { fillColor: [219, 234, 254], textColor: INK, fontStyle: "bold" },
+      headStyles: { fillColor: [37, 117, 252], textColor: "#ffffff", fontStyle: "bold" },
       body: sec.rows,
       columns: [
         { header: sec.title, dataKey: "resp" },
@@ -654,26 +659,25 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       const marginX = 48;
       const title = "Relatório da Pesquisa — Clínicas e Consultórios";
 
-      /* ========= PÁGINA 1: Sumário + Resumo Executivo ========= */
+      /* ========= PÁGINA 1: Sumário + Resumo Executivo + Plano de Ação ========= */
       let startY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
       drawFooter(doc, pageW, pageH, marginX);
 
       const CARD_W = pageW - marginX * 2;
-      const PAD_X = 18;
-      const TITLE_GAP = 26;
-      const LINE = 18;
+      const PAD_X = 16;
+      const TITLE_GAP = 22; // mais compacto
+      const LINE = 16;
 
-      // SUMÁRIO
+      // SUMÁRIO (preto)
       const tocItems = [
         "Visão Geral (KPIs + gráficos por tema)",
         "Respostas detalhadas",
         "Comentários",
         "Identificação (opcional)",
       ];
-
-      const summaryTitleH = 16;
+      const summaryTitleH = 14;
       const summaryListH = tocItems.length * LINE;
-      const summaryPadBottom = 20;
+      const summaryPadBottom = 16;
       const summaryCardH = TITLE_GAP + summaryTitleH + 8 + summaryListH + summaryPadBottom;
 
       if (startY + summaryCardH > pageH - 60) {
@@ -687,12 +691,12 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
-      doc.setFontSize(16);
+      doc.setFontSize(14);
       doc.text("Sumário", marginX + PAD_X, y + TITLE_GAP);
 
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(INK); // preto
-      doc.setFontSize(12);
+      doc.setTextColor(INK);
+      doc.setFontSize(11);
 
       let listY = y + TITLE_GAP + summaryTitleH + 8;
       tocItems.forEach((label, i) => {
@@ -700,8 +704,13 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         listY += LINE;
       });
 
-      // RESUMO EXECUTIVO
-      const bullets = [
+      // Duas metades lado a lado
+      const gapBetween = 16;
+      const rowTop = y + summaryCardH + 18; // respiro
+      const halfW = (CARD_W - gapBetween) / 2;
+
+      // RESUMO EXECUTIVO (esquerda)
+      const resumoBullets = [
         `Amostra consolidada: ${kpi.total} respostas.`,
         `Sinais de impacto: No-show ${kpi.noshowYesPct.toFixed(0)}%, Glosas ${kpi.glosaRecorrentePct.toFixed(
           0
@@ -709,37 +718,79 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         "Recomendação: piloto focado em no-show e glosas, com fluxo assistido para receitas digitais.",
       ];
 
-      const reTitleH = 14;
-      const bulletsH = bullets.length * LINE;
-      const rePadBottom = 24;
-      const reCardH = TITLE_GAP + reTitleH + 8 + bulletsH + rePadBottom;
-
-      const gapBetweenCards = 20;
-      let reTop = y + summaryCardH + gapBetweenCards;
-
-      if (reTop + reCardH > pageH - 60) {
-        reTop = newPage(doc, { title, marginX, pageW, pageH, logoDataUrl });
-      }
+      const reTitleH = 13;
+      const reBulletsH = resumoBullets.length * LINE;
+      const rePadBottom = 16;
+      const reCardH = TITLE_GAP + reTitleH + 8 + reBulletsH + rePadBottom;
 
       doc.setDrawColor(CARD_EDGE);
       doc.setFillColor("#ffffff");
-      doc.roundedRect(marginX, reTop, CARD_W, reCardH, 12, 12, "FD");
+      doc.roundedRect(marginX, rowTop, halfW, reCardH, 12, 12, "FD");
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(INK);
-      doc.setFontSize(14);
-      doc.text("Resumo Executivo — Principais insights", marginX + PAD_X, reTop + TITLE_GAP);
+      doc.setFontSize(13);
+      doc.text("Resumo Executivo — Principais insights", marginX + PAD_X, rowTop + TITLE_GAP);
 
       doc.setFont("helvetica", "normal");
       doc.setTextColor(INK);
-      doc.setFontSize(12);
+      doc.setFontSize(11);
 
-      let by = reTop + TITLE_GAP + reTitleH + 8;
-      const maxW = CARD_W - PAD_X * 2;
-      bullets.forEach((line) => {
-        doc.circle(marginX + PAD_X, by - 3, 2, "F");
-        doc.text(line, marginX + PAD_X + 10, by, { maxWidth: maxW - 10 });
+      let by = rowTop + TITLE_GAP + reTitleH + 8;
+      const maxWleft = halfW - PAD_X * 2;
+      resumoBullets.forEach((line) => {
+        doc.circle(marginX + PAD_X, by - 3, 1.8, "F");
+        doc.text(line, marginX + PAD_X + 8, by, { maxWidth: maxWleft - 8 });
         by += LINE;
+      });
+
+      // PLANO DE AÇÃO (direita) — regras simples por KPI
+      const actionBullets: string[] = [];
+      if (kpi.noshowYesPct >= 50) {
+        actionBullets.push(
+          "No-show: lembretes automáticos + confirmação (D-7 e D-1) e lista ativa de recuperação."
+        );
+      }
+      if (kpi.glosaRecorrentePct >= 40) {
+        actionBullets.push(
+          "Glosas: checklist TISS/TUSS e conferência pré-envio; padrão de auditoria com amostragem semanal."
+        );
+      }
+      if (kpi.rxReworkPct >= 40) {
+        actionBullets.push(
+          "Receitas digitais: padronizar modelo e fluxo assistido (envio paciente/farmácia) com validação automática."
+        );
+      }
+      if (actionBullets.length === 0) {
+        actionBullets.push("Manter monitoramento e ampliar base de respondentes (amostra pequena).");
+      }
+
+      const apTitleH = 13;
+      const apBulletsH = actionBullets.length * LINE;
+      const apPadBottom = 16;
+      const apCardH = TITLE_GAP + apTitleH + 8 + apBulletsH + apPadBottom;
+
+      const rightX = marginX + halfW + gapBetween;
+
+      doc.setDrawColor(CARD_EDGE);
+      doc.setFillColor("#ffffff");
+      doc.roundedRect(rightX, rowTop, halfW, apCardH, 12, 12, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(INK);
+      doc.setFontSize(13);
+      doc.text("Plano de Ação sugerido (MVP)", rightX + PAD_X, rowTop + TITLE_GAP);
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(INK);
+      doc.setFontSize(11);
+
+      let py = rowTop + TITLE_GAP + apTitleH + 8;
+      const maxWright = halfW - PAD_X * 2;
+      actionBullets.forEach((line) => {
+        doc.circle(rightX + PAD_X, py - 3, 1.8, "F");
+        doc.text(line, rightX + PAD_X + 8, py, { maxWidth: maxWright - 8 });
+        py += LINE;
       });
 
       /* ========= PÁGINA 2: Visão Geral (KPIs + grade 3×3 compacta) ========= */
@@ -756,16 +807,53 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
       doc.text("Visão Geral", marginX, kpiY + 2);
       kpiY += 14;
 
-      drawKpiCard(doc, marginX + 0 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "Total de respostas", `${kpi.total}`, ACCENT);
-      drawKpiCard(doc, marginX + 1 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% no-show relevante", `${kpi.noshowYesPct.toFixed(0)}%`);
-      drawKpiCard(doc, marginX + 2 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% glosas recorrentes", `${kpi.glosaRecorrentePct.toFixed(0)}%`);
-      drawKpiCard(doc, marginX + 3 * (kpiCardW + gap), kpiY, kpiCardW, kpiCardH, "% receitas geram retrabalho", `${kpi.rxReworkPct.toFixed(0)}%`);
+      drawKpiCard(
+        doc,
+        marginX + 0 * (kpiCardW + gap),
+        kpiY,
+        kpiCardW,
+        kpiCardH,
+        "Total de respostas",
+        `${kpi.total}`,
+        ACCENT
+      );
+      drawKpiCard(
+        doc,
+        marginX + 1 * (kpiCardW + gap),
+        kpiY,
+        kpiCardW,
+        kpiCardH,
+        "% no-show relevante",
+        `${kpi.noshowYesPct.toFixed(0)}%`
+      );
+      drawKpiCard(
+        doc,
+        marginX + 2 * (kpiCardW + gap),
+        kpiY,
+        kpiCardW,
+        kpiCardH,
+        "% glosas recorrentes",
+        `${kpi.glosaRecorrentePct.toFixed(0)}%`
+      );
+      drawKpiCard(
+        doc,
+        marginX + 3 * (kpiCardW + gap),
+        kpiY,
+        kpiCardW,
+        kpiCardH,
+        "% receitas geram retrabalho",
+        `${kpi.rxReworkPct.toFixed(0)}%`
+      );
 
       let gridTop = kpiY + kpiCardH + 24;
 
       const nsRelev = dist(answers, "q_noshow_relevance", ["Sim", "Não", "Parcialmente"]).items;
       const nsSys = dist(answers, "q_noshow_has_system", ["Sim", "Não"]).items;
-      const nsImpact = dist(answers, "q_noshow_financial_impact", ["Baixo impacto", "Médio impacto", "Alto impacto"]).items;
+      const nsImpact = dist(answers, "q_noshow_financial_impact", [
+        "Baixo impacto",
+        "Médio impacto",
+        "Alto impacto",
+      ]).items;
 
       const gRec = dist(answers, "q_glosa_is_problem", ["Sim", "Não", "Às vezes"]).items;
       const gInt = dist(answers, "q_glosa_interest", ["Sim", "Não", "Talvez"]).items;
@@ -827,7 +915,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         renderSectionTable(doc, SECTIONS[key], answers, pageW, pageH, marginX, title, logoDataUrl);
       }
 
-      /* ========= RESPOSTAS DETALHADAS — adaptativo ========= */
+      /* ========= RESPOSTAS DETALHADAS — modo adaptativo ========= */
       if (answers.length <= 20) {
         renderDetailedAsCards(doc, answers, pageW, pageH, marginX, title, logoDataUrl);
       } else {
@@ -882,7 +970,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
         drawFooter(doc, pageW, pageH, marginX);
       }
 
-      /* ========= IDENTIFICAÇÃO (com consentimento) ========= */
+      /* ========= IDENTIFICAÇÃO (se autorizado) ========= */
       const idRows = answers
         .filter((a) => a.consent_contact === true || a.consent === true)
         .map((a, i) => ({
@@ -895,13 +983,30 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
 
       if (idRows.length) {
         doc.addPage();
-        const headerGap = 28;
-        const topY = 14 + 72 + 12 + headerGap + TOP_GAP;
+        const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
+
+        // Título + subtítulo
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(INK);
+        doc.setFontSize(14);
+        doc.text("Identificação (somente com autorização de contato)", marginX, sY + 18);
+
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(INK_SOFT);
+        doc.setFontSize(11);
+        const infoY = sY + 36;
+        doc.text(
+          "Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.",
+          marginX,
+          infoY
+        );
+
+        const topY = infoY + 18; // desloca a tabela para baixo
 
         autoTable(doc as any, {
           startY: topY,
           styles: { font: "helvetica", fontSize: 10, textColor: INK, cellPadding: 6, lineColor: CARD_EDGE },
-          headStyles: { fillColor: [219, 234, 254], textColor: INK, fontStyle: "bold" },
+          headStyles: { fillColor: [25, 118, 210], textColor: "#ffffff", fontStyle: "bold" },
           body: idRows,
           columns: [
             { header: "Resp.", dataKey: "resp" },
@@ -914,19 +1019,7 @@ export default function ExportPDFButton({ kpi, answers }: Props) {
           theme: "grid",
           rowPageBreak: "auto",
           didDrawPage: () => {
-            const sY = drawHeader(doc, pageW, marginX, title, logoDataUrl);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(INK);
-            doc.setFontSize(14);
-            doc.text("Identificação (somente com autorização de contato)", marginX, sY + 18);
-            doc.setFont("helvetica", "normal");
-            doc.setTextColor(INK_SOFT);
-            doc.setFontSize(11);
-            doc.text(
-              "Os dados abaixo aparecem apenas quando o respondente marcou o consentimento.",
-              marginX,
-              sY + 36
-            );
+            drawHeader(doc, pageW, marginX, title, logoDataUrl);
             drawFooter(doc, pageW, pageH, marginX);
           },
         });
