@@ -195,19 +195,36 @@ function newPage(
 
 /* ===================== Primitivos ===================== */
 
-function drawBadge(doc: jsPDF, text: string, x: number, y: number, fill = "#000") {
-  const padX = 8;
-  const h = 20;
+function drawBadge(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  fill = "#000",
+  padX = 8,
+  padY = 6
+) {
+  // use o tamanho de fonte atual
+  const fs = doc.getFontSize();       // ex.: 10
+  const h = Math.max(20, fs + padY * 2);
   const w = doc.getTextWidth(text) + padX * 2;
+
+  // pill
   doc.setFillColor(fill);
   doc.setDrawColor(fill);
   doc.roundedRect(x, y, w, h, 10, 10, "F");
+
+  // texto centralizado verticalmente
+  // 0.35*fs aproxima a distância da linha-base ao centro óptico da fonte Helvetica
+  const yText = y + h / 2 + fs * 0.35;
+
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
   doc.setTextColor("#ffffff");
-  doc.text(text, x + padX, y + 13);
+  doc.text(text, x + padX, yText);
+
   return { w, h };
 }
+
 
 function bulletLines(
   doc: jsPDF,
